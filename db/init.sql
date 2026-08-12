@@ -41,10 +41,21 @@ CREATE TABLE IF NOT EXISTS hubstaff_credentials (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Organizations table
+CREATE TABLE IF NOT EXISTS organizations (
+    id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name VARCHAR(150) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Projects table
 CREATE TABLE IF NOT EXISTS projects (
     id VARCHAR(50) PRIMARY KEY,
+    organization_id VARCHAR(50) REFERENCES organizations(id) ON DELETE CASCADE,
     name VARCHAR(150) NOT NULL,
+    status VARCHAR(50) NOT NULL DEFAULT 'active',
     role_type VARCHAR(20) NOT NULL DEFAULT 'Unassigned', -- 'Trainer', 'Reviewer', or 'Unassigned'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
@@ -99,12 +110,6 @@ CREATE TABLE IF NOT EXISTS hubstaff_time_totals (
 -- Initial Seed Data
 INSERT INTO users (id, name, first_name, last_name, email, time_zone, status) VALUES
     ('usr_alex_rivera_01', 'Alex Rivera', 'Alex', 'Rivera', 'alex.rivera@company.com', 'America/New_York', 'active')
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO projects (id, name, role_type) VALUES
-    ('PRJ-901', 'Quality Assurance & Reviews', 'Reviewer'),
-    ('PRJ-902', 'Trainer Coaching & SOP', 'Trainer'),
-    ('PRJ-903', 'Client Escalations', 'Reviewer')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO user_settings (user_id, default_role, tracking_start_date, trainer_expected_aht_minutes, trainer_max_aht_minutes, reviewer_expected_aht_minutes, reviewer_max_aht_minutes) VALUES

@@ -35,6 +35,9 @@ class User(Base):
     )
 
     # Relationships
+    organizations: Mapped[list["Organization"]] = relationship(
+        "Organization", back_populates="user", cascade="all, delete-orphan"
+    )
     hubstaff_events: Mapped[list["HubstaffEvent"]] = relationship(
         "HubstaffEvent", back_populates="user", cascade="all, delete-orphan"
     )
@@ -73,17 +76,42 @@ class HubstaffCredential(Base):
     user: Mapped["User"] = relationship("User", back_populates="credential")
 
 
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User", back_populates="organizations")
+    projects: Mapped[list["Project"]] = relationship(
+        "Project", back_populates="organization", cascade="all, delete-orphan"
+    )
+
+
 class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    organization_id: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=True
+    )
     name: Mapped[str] = mapped_column(String(150), nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
     role_type: Mapped[str] = mapped_column(String(20), default="Unassigned", nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 
     # Relationships
+    organization: Mapped[Optional["Organization"]] = relationship("Organization", back_populates="projects")
     hubstaff_events: Mapped[list["HubstaffEvent"]] = relationship(
         "HubstaffEvent", back_populates="project", cascade="all, delete-orphan"
     )

@@ -16,20 +16,29 @@ import {
   formatDuration,
   formatMinutesDecimal,
   activeTimerSeconds,
-  resetTaskLogsToSeed,
+  getUserAvailableRoles,
+  getEffectiveUserRole,
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
 
 export default function Home() {
   // Form signals
-  const [selectedRole, setSelectedRole] = createSignal<Role>(settings.defaultRole);
+  const [selectedRole, setSelectedRole] = createSignal<Role>(getEffectiveUserRole());
   const [selectedSubrole, setSelectedSubrole] = createSignal<Subrole>(
-    SUBROLES_BY_ROLE[settings.defaultRole][0]
+    SUBROLES_BY_ROLE[getEffectiveUserRole()][0]
   );
   const [taskTitle, setTaskTitle] = createSignal<string>("");
   const [taskUrl, setTaskUrl] = createSignal<string>("");
   const [taskNotes, setTaskNotes] = createSignal<string>("");
   const [timerMode, setTimerMode] = createSignal<TimerMode>("hubstaff");
+
+  // Keep selected role synced with effective role if single role
+  createEffect(() => {
+    const available = getUserAvailableRoles();
+    if (available.length === 1 && selectedRole() !== available[0]) {
+      setSelectedRole(available[0]);
+    }
+  });
 
   // Duration in minutes for testing / override
   const [customDurationMins, setCustomDurationMins] = createSignal<number>(
@@ -238,27 +247,30 @@ export default function Home() {
               </div>
 
               {/* Role & Subrole Row */}
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                <div>
-                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Role <span class="text-rose-400">*</span>
-                  </label>
-                  <div class="relative">
-                    <select
-                      value={selectedRole()}
-                      onChange={(e) => setSelectedRole(e.currentTarget.value as Role)}
-                      class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none"
-                    >
-                      <option value="Trainer">Trainer</option>
-                      <option value="Reviewer">Reviewer</option>
-                    </select>
-                    <div class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-400">
-                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-                      </svg>
+              <div class={getUserAvailableRoles().length > 1 ? "grid grid-cols-1 sm:grid-cols-2 gap-5" : "grid grid-cols-1 gap-5"}>
+                <Show when={getUserAvailableRoles().length > 1}>
+                  <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                      Role <span class="text-rose-400">*</span>
+                    </label>
+                    <div class="relative">
+                      <select
+                        value={selectedRole()}
+                        onChange={(e) => setSelectedRole(e.currentTarget.value as Role)}
+                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none"
+                      >
+                        <For each={getUserAvailableRoles()}>
+                          {(role) => <option value={role}>{role}</option>}
+                        </For>
+                      </select>
+                      <div class="absolute inset-y-0 right-0 flex items-center px-3 pointer-events-none text-slate-400">
+                        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
                     </div>
                   </div>
-                </div>
+                </Show>
 
                 <div>
                   <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
@@ -491,32 +503,34 @@ export default function Home() {
               </svg>
             </div>
 
-            <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
-              <button
-                onClick={() => setLogFilterRole("All")}
-                class={`px-2.5 py-0.5 rounded transition-all ${
-                  logFilterRole() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                }`}
-              >
-                All
-              </button>
-              <button
-                onClick={() => setLogFilterRole("Trainer")}
-                class={`px-2.5 py-0.5 rounded transition-all ${
-                  logFilterRole() === "Trainer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                }`}
-              >
-                Trainer
-              </button>
-              <button
-                onClick={() => setLogFilterRole("Reviewer")}
-                class={`px-2.5 py-0.5 rounded transition-all ${
-                  logFilterRole() === "Reviewer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                }`}
-              >
-                Reviewer
-              </button>
-            </div>
+            <Show when={getUserAvailableRoles().length > 1 || (tasks.some((t) => t.role === "Trainer") && tasks.some((t) => t.role === "Reviewer"))}>
+              <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+                <button
+                  onClick={() => setLogFilterRole("All")}
+                  class={`px-2.5 py-0.5 rounded transition-all ${
+                    logFilterRole() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => setLogFilterRole("Trainer")}
+                  class={`px-2.5 py-0.5 rounded transition-all ${
+                    logFilterRole() === "Trainer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                  }`}
+                >
+                  Trainer
+                </button>
+                <button
+                  onClick={() => setLogFilterRole("Reviewer")}
+                  class={`px-2.5 py-0.5 rounded transition-all ${
+                    logFilterRole() === "Reviewer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                  }`}
+                >
+                  Reviewer
+                </button>
+              </div>
+            </Show>
           </div>
         </div>
 

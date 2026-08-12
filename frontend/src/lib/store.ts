@@ -109,46 +109,12 @@ export const DEFAULT_SETTINGS: UserSettings = {
 };
 
 export const DEFAULT_HUBSTAFF_TIME: HubstaffTimeRecord = {
-  Reviewer: 16200, // 4.5 hours
-  Trainer: 21600, // 6.0 hours
+  Reviewer: 0,
+  Trainer: 0,
 };
 
 const getSeedTasks = (): TaskLogEntry[] => {
-  const now = new Date();
-  const minsAgo = (m: number) => new Date(now.getTime() - m * 60 * 1000).toISOString();
-  const daysAgo = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
-
-  const entries: TaskLogEntry[] = [];
-  const roles: Role[] = ["Reviewer", "Trainer"];
-  const titles = [
-    "Audit Onboarding Case",
-    "Escalation Verification",
-    "SLA Triaging Workshop",
-    "Tier 2 Quality Review",
-    "KB SOP Documentation",
-    "Workflow Optimization",
-    "Customer Care Audit",
-    "Ticket Escalation Analysis",
-    "Quality Assurance Batch",
-  ];
-
-  for (let i = 1; i <= 35; i++) {
-    const role = roles[i % 2];
-    const subrole = SUBROLES_BY_ROLE[role][i % 2];
-    entries.push({
-      id: `task_${i.toString().padStart(2, "0")}`,
-      userId: DEFAULT_USER.id,
-      role,
-      subrole,
-      title: `${titles[i % titles.length]} #${100 + i}`,
-      url: `https://hubstaff.com/tasks/${10400 + i}`,
-      notes: i % 3 === 0 ? "Offline notes reviewed." : "Verified standard operating procedure.",
-      durationSeconds: 450 + ((i * 35) % 900),
-      timerMode: i % 5 === 0 ? "untracked" : "hubstaff",
-      createdAt: i < 5 ? minsAgo(i * 40) : daysAgo(Math.floor(i / 3)),
-    });
-  }
-  return entries;
+  return [];
 };
 
 const getSeedHubstaffEvents = (): HubstaffEvent[] => {
@@ -614,4 +580,47 @@ export const getAhtStatus = (
       bgClass: "bg-rose-950/60 text-rose-300",
     };
   }
+};
+
+export const getUserAvailableRoles = (): Role[] => {
+  const orgs = hubstaffStatus().organizations || [];
+  let hasTrainerProject = false;
+  let hasReviewerProject = false;
+
+  for (const org of orgs) {
+    if (org.projects && org.projects.length > 0) {
+      for (const prj of org.projects) {
+        const nameLower = prj.name.toLowerCase();
+        if (nameLower.includes("trainer")) hasTrainerProject = true;
+        if (nameLower.includes("reviewer")) hasReviewerProject = true;
+      }
+    }
+  }
+
+  const hasTrainerHistory = tasks.some((t) => t.role === "Trainer");
+  const hasReviewerHistory = tasks.some((t) => t.role === "Reviewer");
+
+  const hasTrainer = hasTrainerProject || hasTrainerHistory;
+  const hasReviewer = hasReviewerProject || hasReviewerHistory;
+
+  if (hasTrainer && hasReviewer) {
+    return ["Trainer", "Reviewer"];
+  }
+  if (hasTrainer && !hasReviewer) {
+    return ["Trainer"];
+  }
+  if (hasReviewer && !hasTrainer) {
+    return ["Reviewer"];
+  }
+
+  // Exception: If user has no projects and no prior data, default to only Trainer
+  return ["Trainer"];
+};
+
+export const getEffectiveUserRole = (): Role => {
+  const available = getUserAvailableRoles();
+  if (available.length === 1) {
+    return available[0];
+  }
+  return settings.defaultRole || "Reviewer";
 };

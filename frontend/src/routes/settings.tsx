@@ -9,6 +9,7 @@ import {
   fetchHubstaffStatusFromBackend,
   submitHubstaffPatToBackend,
   hydrateStoreFromLocalStorage,
+  getUserAvailableRoles,
 } from "../lib/store";
 import { ConfirmationModal } from "../components/ConfirmationModal";
 
@@ -342,7 +343,7 @@ export default function Settings() {
           )}
         </Show>
 
-        {/* Hubstaff Organizations & Micro1 Projects Card */}
+        {/* Hubstaff Organizations & Projects Card */}
         <Show when={hubstaffStatus().user}>
           <div class="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4">
             <div class="flex items-center justify-between">
@@ -350,7 +351,7 @@ export default function Settings() {
                 <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                 </svg>
-                <span>Hubstaff Organizations & Micro1 Projects</span>
+                <span>Hubstaff Organizations & Projects</span>
               </div>
             </div>
 
@@ -380,11 +381,10 @@ export default function Settings() {
                             ID: {org.id}
                           </span>
                           <span
-                            class={`px-2 py-0.5 rounded text-[11px] font-medium capitalize ${
-                              org.status === "active"
+                            class={`px-2 py-0.5 rounded text-[11px] font-medium capitalize ${org.status === "active"
                                 ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
                                 : "bg-amber-950 text-amber-400 border border-amber-800"
-                            }`}
+                              }`}
                           >
                             {org.status}
                           </span>
@@ -398,7 +398,7 @@ export default function Settings() {
                             <svg class="w-3.5 h-3.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
                             </svg>
-                            <span>Micro1 Projects</span>
+                            <span>Projects</span>
                           </div>
 
                           <Show
@@ -409,20 +409,21 @@ export default function Settings() {
                               </div>
                             }
                           >
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                            <div class="space-y-2 text-xs">
                               <For each={org.projects || []}>
                                 {(prj) => (
-                                  <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800/90 flex items-center justify-between">
-                                    <div class="space-y-0.5 min-w-0 pr-2">
-                                      <div class="font-medium text-slate-200 truncate">{prj.name}</div>
-                                      <div class="text-[10px] font-mono text-sky-400">ID: {prj.id}</div>
+                                  <div class="bg-slate-950 p-3 rounded-lg border border-slate-800/90 flex items-center justify-between gap-3 sm:gap-4 flex-wrap sm:flex-nowrap">
+                                    <div class="font-medium text-slate-200 min-w-0 flex-1">
+                                      {prj.name}
+                                    </div>
+                                    <div class="font-mono text-xs text-sky-400 bg-slate-900 px-2.5 py-1 rounded border border-slate-800 shrink-0">
+                                      ID: {prj.id}
                                     </div>
                                     <span
-                                      class={`px-2 py-0.5 rounded text-[10px] font-medium capitalize shrink-0 ${
-                                        prj.status === "active"
+                                      class={`px-2.5 py-1 rounded text-xs font-medium capitalize shrink-0 ${prj.status === "active"
                                           ? "bg-sky-950 text-sky-400 border border-sky-800"
                                           : "bg-slate-900 text-slate-400 border border-slate-800"
-                                      }`}
+                                        }`}
                                     >
                                       {prj.status}
                                     </span>
@@ -508,69 +509,69 @@ export default function Settings() {
 
       {/* MAIN SETTINGS FORM */}
       <form onSubmit={handleSaveSettings} class="space-y-8">
-        
+
         {/* CARD 1: Default User Role */}
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-          <div class="pb-3 border-b border-slate-800">
-            <h2 class="text-base font-bold text-white flex items-center space-x-2">
-              <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-              </svg>
-              <span>Default User Role</span>
-            </h2>
-            <p class="text-xs text-slate-400 mt-1">
-              This role will automatically pre-select in dropdowns when creating new task entries.
-            </p>
-          </div>
+        <Show when={getUserAvailableRoles().length > 1}>
+          <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+            <div class="pb-3 border-b border-slate-800">
+              <h2 class="text-base font-bold text-white flex items-center space-x-2">
+                <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+                <span>Default User Role</span>
+              </h2>
+              <p class="text-xs text-slate-400 mt-1">
+                This role will automatically pre-select in dropdowns when creating new task entries.
+              </p>
+            </div>
 
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-            <label
-              class={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${
-                defaultRole() === "Reviewer"
-                  ? "bg-sky-950/60 border-sky-500/80 shadow-md shadow-sky-950"
-                  : "bg-slate-950 border-slate-800 hover:border-slate-700"
-              }`}
-            >
-              <input
-                type="radio"
-                name="defaultRole"
-                value="Reviewer"
-                checked={defaultRole() === "Reviewer"}
-                onChange={() => setDefaultRole("Reviewer")}
-                class="w-4 h-4 text-sky-500 focus:ring-sky-500 bg-slate-900 border-slate-700"
-              />
-              <div class="ml-3">
-                <span class="block text-sm font-bold text-white">Reviewer</span>
-                <span class="block text-xs text-slate-400 mt-0.5">
-                  Subroles: Completion Reviewer, Quality Reviewer
-                </span>
-              </div>
-            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <label
+                class={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${defaultRole() === "Trainer"
+                    ? "bg-indigo-950/60 border-indigo-500/80 shadow-md shadow-indigo-950"
+                    : "bg-slate-950 border-slate-800 hover:border-slate-700"
+                  }`}
+              >
+                <input
+                  type="radio"
+                  name="defaultRole"
+                  value="Trainer"
+                  checked={defaultRole() === "Trainer"}
+                  onChange={() => setDefaultRole("Trainer")}
+                  class="w-4 h-4 text-indigo-500 focus:ring-indigo-500 bg-slate-900 border-slate-700"
+                />
+                <div class="ml-3">
+                  <span class="block text-sm font-bold text-white">Trainer</span>
+                  <span class="block text-xs text-slate-400 mt-0.5">
+                    Subroles: Trainer 1, Trainer 2
+                  </span>
+                </div>
+              </label>
 
-            <label
-              class={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${
-                defaultRole() === "Trainer"
-                  ? "bg-indigo-950/60 border-indigo-500/80 shadow-md shadow-indigo-950"
-                  : "bg-slate-950 border-slate-800 hover:border-slate-700"
-              }`}
-            >
-              <input
-                type="radio"
-                name="defaultRole"
-                value="Trainer"
-                checked={defaultRole() === "Trainer"}
-                onChange={() => setDefaultRole("Trainer")}
-                class="w-4 h-4 text-indigo-500 focus:ring-indigo-500 bg-slate-900 border-slate-700"
-              />
-              <div class="ml-3">
-                <span class="block text-sm font-bold text-white">Trainer</span>
-                <span class="block text-xs text-slate-400 mt-0.5">
-                  Subroles: Trainer 1, Trainer 2
-                </span>
-              </div>
-            </label>
+              <label
+                class={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${defaultRole() === "Reviewer"
+                    ? "bg-sky-950/60 border-sky-500/80 shadow-md shadow-sky-950"
+                    : "bg-slate-950 border-slate-800 hover:border-slate-700"
+                  }`}
+              >
+                <input
+                  type="radio"
+                  name="defaultRole"
+                  value="Reviewer"
+                  checked={defaultRole() === "Reviewer"}
+                  onChange={() => setDefaultRole("Reviewer")}
+                  class="w-4 h-4 text-sky-500 focus:ring-sky-500 bg-slate-900 border-slate-700"
+                />
+                <div class="ml-3">
+                  <span class="block text-sm font-bold text-white">Reviewer</span>
+                  <span class="block text-xs text-slate-400 mt-0.5">
+                    Subroles: Completion Reviewer, Quality Reviewer
+                  </span>
+                </div>
+              </label>
+            </div>
           </div>
-        </div>
+        </Show>
 
         {/* CARD 2: Role AHT Thresholds */}
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
@@ -586,76 +587,80 @@ export default function Settings() {
             </p>
           </div>
 
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <div class="flex items-center space-x-2">
-                <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
-                <h3 class="font-bold text-white text-sm">Trainer Role Benchmarks</h3>
-              </div>
+          <div class={getUserAvailableRoles().length > 1 ? "grid grid-cols-1 md:grid-cols-2 gap-6" : "grid grid-cols-1 gap-6"}>
+            <Show when={getUserAvailableRoles().includes("Trainer")}>
+              <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+                <div class="flex items-center space-x-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
+                  <h3 class="font-bold text-white text-sm">Trainer Role Benchmarks</h3>
+                </div>
 
-              <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Expected AHT (Minutes)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="120"
-                  value={trainerExpected()}
-                  onInput={(e) => setTrainerExpected(parseInt(e.currentTarget.value) || 1)}
-                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
-              </div>
+                <div>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Expected AHT (Minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="120"
+                    value={trainerExpected()}
+                    onInput={(e) => setTrainerExpected(parseInt(e.currentTarget.value) || 1)}
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
 
-              <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Max AHT Threshold (Minutes)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="180"
-                  value={trainerMax()}
-                  onInput={(e) => setTrainerMax(parseInt(e.currentTarget.value) || 1)}
-                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                />
+                <div>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Max AHT Threshold (Minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="180"
+                    value={trainerMax()}
+                    onInput={(e) => setTrainerMax(parseInt(e.currentTarget.value) || 1)}
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
-            </div>
+            </Show>
 
-            <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <div class="flex items-center space-x-2">
-                <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
-                <h3 class="font-bold text-white text-sm">Reviewer Role Benchmarks</h3>
-              </div>
+            <Show when={getUserAvailableRoles().includes("Reviewer")}>
+              <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+                <div class="flex items-center space-x-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
+                  <h3 class="font-bold text-white text-sm">Reviewer Role Benchmarks</h3>
+                </div>
 
-              <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Expected AHT (Minutes)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="120"
-                  value={reviewerExpected()}
-                  onInput={(e) => setReviewerExpected(parseInt(e.currentTarget.value) || 1)}
-                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
-              </div>
+                <div>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Expected AHT (Minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="120"
+                    value={reviewerExpected()}
+                    onInput={(e) => setReviewerExpected(parseInt(e.currentTarget.value) || 1)}
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
 
-              <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Max AHT Threshold (Minutes)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="180"
-                  value={reviewerMax()}
-                  onInput={(e) => setReviewerMax(parseInt(e.currentTarget.value) || 1)}
-                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
+                <div>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Max AHT Threshold (Minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="180"
+                    value={reviewerMax()}
+                    onInput={(e) => setReviewerMax(parseInt(e.currentTarget.value) || 1)}
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                </div>
               </div>
-            </div>
+            </Show>
           </div>
         </div>
 
@@ -701,7 +706,7 @@ export default function Settings() {
                   onClick={(e) => {
                     try {
                       e.currentTarget.showPicker();
-                    } catch (err) {}
+                    } catch (err) { }
                   }}
                   class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
                 />

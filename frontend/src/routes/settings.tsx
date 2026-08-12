@@ -45,6 +45,22 @@ export default function Settings() {
   const [toastMsg, setToastMsg] = createSignal<string>("");
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
 
+  let dateInputRef: HTMLInputElement | undefined;
+
+  const formatHumanDate = (dateStr: string) => {
+    if (!dateStr) return "";
+    const parts = dateStr.split("-").map(Number);
+    if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) {
+      return dateStr;
+    }
+    const date = new Date(parts[0], parts[1] - 1, parts[2]);
+    return date.toLocaleDateString("en-US", {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
   onMount(() => {
     fetchHubstaffStatusFromBackend();
   });
@@ -548,16 +564,38 @@ export default function Settings() {
           </div>
 
           <div class="flex flex-col sm:flex-row sm:items-center gap-4 pt-2">
-            <div class="flex-1 max-w-xs">
+            <div class="flex-1 max-w-sm">
               <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
                 Tracking Start Date
               </label>
-              <input
-                type="date"
-                value={trackingStartDate()}
-                onInput={(e) => setTrackingStartDate(e.currentTarget.value)}
-                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-500 [color-scheme:dark] cursor-pointer"
-              />
+
+              <div
+                onClick={() => dateInputRef?.showPicker()}
+                class="relative w-full bg-slate-950 border border-slate-700 hover:border-slate-600 rounded-xl px-4 py-2.5 flex items-center justify-between cursor-pointer transition-all focus-within:ring-2 focus-within:ring-sky-500 group shadow-sm"
+              >
+                <span class="text-slate-100 text-sm font-semibold tracking-wide">
+                  {formatHumanDate(trackingStartDate())}
+                </span>
+
+                <div class="flex items-center space-x-2 text-slate-300 group-hover:text-white">
+                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </div>
+
+                <input
+                  ref={dateInputRef}
+                  type="date"
+                  value={trackingStartDate()}
+                  onInput={(e) => setTrackingStartDate(e.currentTarget.value)}
+                  onClick={(e) => {
+                    try {
+                      e.currentTarget.showPicker();
+                    } catch (err) {}
+                  }}
+                  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                />
+              </div>
             </div>
 
             <div class="pt-0 sm:pt-6">

@@ -24,6 +24,7 @@ export interface UserSettings {
     Trainer: RoleThresholds;
     Reviewer: RoleThresholds;
   };
+  lastSyncedAt?: string;
 }
 
 export interface TaskLogEntry {
@@ -63,10 +64,25 @@ export interface UserProfile {
   status?: string;
 }
 
+export interface HubstaffOrgProject {
+  id: string;
+  name: string;
+  status: string;
+}
+
+export interface HubstaffOrg {
+  id: string;
+  name: string;
+  status: string;
+  is_micro1?: boolean;
+  projects: HubstaffOrgProject[];
+}
+
 export interface HubstaffAuthStatus {
   isConnected: boolean;
   isLocked: boolean;
   user: UserProfile | null;
+  organizations?: HubstaffOrg[];
 }
 
 const STORAGE_KEY = "hubstaff_aht_app_state_v3";
@@ -136,30 +152,7 @@ const getSeedTasks = (): TaskLogEntry[] => {
 };
 
 const getSeedHubstaffEvents = (): HubstaffEvent[] => {
-  const now = new Date();
-  const minsAgo = (m: number) => new Date(now.getTime() - m * 60 * 1000).toISOString();
-  const daysAgo = (d: number) => new Date(now.getTime() - d * 24 * 60 * 60 * 1000).toISOString();
-
-  const events: HubstaffEvent[] = [];
-  const projects = [
-    { id: "PRJ-901", name: "Quality Assurance & Reviews" },
-    { id: "PRJ-902", name: "Trainer Coaching & SOP" },
-    { id: "PRJ-903", name: "Client Escalations" },
-  ];
-
-  for (let i = 1; i <= 30; i++) {
-    const isStart = i % 2 !== 0;
-    const prj = projects[i % projects.length];
-    events.push({
-      id: `evt_${i.toString().padStart(3, "0")}`,
-      userId: DEFAULT_USER.id,
-      eventName: isStart ? "Timer Started" : "Timer Stopped",
-      eventTime: i < 6 ? minsAgo(i * 30) : daysAgo(Math.floor(i / 2)),
-      projectId: prj.id,
-      projectName: prj.name,
-    });
-  }
-  return events;
+  return [];
 };
 
 interface LocalState {
@@ -170,31 +163,6 @@ interface LocalState {
 }
 
 const loadInitialState = (): LocalState => {
-  if (typeof window === "undefined") {
-    return {
-      settings: DEFAULT_SETTINGS,
-      tasks: getSeedTasks(),
-      hubstaffEvents: getSeedHubstaffEvents(),
-      hubstaffTime: DEFAULT_HUBSTAFF_TIME,
-    };
-  }
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      return {
-        settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
-        tasks: Array.isArray(parsed.tasks) && parsed.tasks.length > 0 ? parsed.tasks : getSeedTasks(),
-        hubstaffEvents:
-          Array.isArray(parsed.hubstaffEvents) && parsed.hubstaffEvents.length > 0
-            ? parsed.hubstaffEvents
-            : getSeedHubstaffEvents(),
-        hubstaffTime: { ...DEFAULT_HUBSTAFF_TIME, ...parsed.hubstaffTime },
-      };
-    }
-  } catch (e) {
-    console.error("Error loading localStorage state:", e);
-  }
   return {
     settings: DEFAULT_SETTINGS,
     tasks: getSeedTasks(),
@@ -236,8 +204,55 @@ export const saveStateToLocalStorage = () => {
 };
 
 export const updateUserSettings = (newSettings: Partial<UserSettings>) => {
-  setSettings((prev: UserSettings) => ({ ...prev, ...newSettings }));
+  if (newSettings.defaultRole !== undefined) setSettings("defaultRole", newSettings.defaultRole);
+  if (newSettings.trackingStartDate !== undefined) setSettings("trackingStartDate", newSettings.trackingStartDate);
+  if (newSettings.pageSize !== undefined) setSettings("pageSize", newSettings.pageSize);
+  if (newSettings.hubstaffPageSize !== undefined) setSettings("hubstaffPageSize", newSettings.hubstaffPageSize);
+
+  if (newSettings.thresholds) {
+    if (newSettings.thresholds.Trainer) {
+      if (newSettings.thresholds.Trainer.expectedAhtMinutes !== undefined) {
+        setSettings("thresholds", "Trainer", "expectedAhtMinutes", newSettings.thresholds.Trainer.expectedAhtMinutes);
+      }
+      if (newSettings.thresholds.Trainer.maxAhtMinutes !== undefined) {
+        setSettings("thresholds", "Trainer", "maxAhtMinutes", newSettings.thresholds.Trainer.maxAhtMinutes);
+      }
+    }
+    if (newSettings.thresholds.Reviewer) {
+      if (newSettings.thresholds.Reviewer.expectedAhtMinutes !== undefined) {
+        setSettings("thresholds", "Reviewer", "expectedAhtMinutes", newSettings.thresholds.Reviewer.expectedAhtMinutes);
+      }
+      if (newSettings.thresholds.Reviewer.maxAhtMinutes !== undefined) {
+        setSettings("thresholds", "Reviewer", "maxAhtMinutes", newSettings.thresholds.Reviewer.maxAhtMinutes);
+      }
+    }
+  }
+  setSettings("lastSyncedAt", new Date().toISOString());
   saveStateToLocalStorage();
+};
+
+export const hydrateStoreFromLocalStorage = () => {
+  if (typeof window === "undefined") return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.settings) {
+        updateUserSettings(parsed.settings);
+      }
+      if (Array.isArray(parsed.tasks) && parsed.tasks.length > 0) {
+        setTasks(parsed.tasks);
+      }
+      if (Array.isArray(parsed.hubstaffEvents) && parsed.hubstaffEvents.length > 0) {
+        setHubstaffEvents(parsed.hubstaffEvents);
+      }
+      if (parsed.hubstaffTime) {
+        setHubstaffTime(parsed.hubstaffTime);
+      }
+    }
+  } catch (e) {
+    console.error("Error hydrating store from localStorage:", e);
+  }
 };
 
 export const saveUserSettingsToBackend = async (newSettings: Partial<UserSettings>) => {
@@ -355,6 +370,7 @@ export const fetchHubstaffStatusFromBackend = async () => {
         isConnected: data.connected,
         isLocked: data.is_locked,
         user: data.user || null,
+        organizations: data.organizations || [],
       });
 
       if (data.user_settings) {
@@ -376,6 +392,19 @@ export const fetchHubstaffStatusFromBackend = async () => {
     }
   } catch (e) {
     console.warn("Could not fetch backend Hubstaff status:", e);
+  }
+};
+
+export const syncOrganizationsFromBackend = async () => {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/sync-organizations`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      await fetchHubstaffStatusFromBackend();
+    }
+  } catch (e) {
+    console.warn("Could not sync organizations from backend:", e);
   }
 };
 

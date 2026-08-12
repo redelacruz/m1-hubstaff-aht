@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, createEffect, onMount, Show, For } from "solid-js";
 import {
   Role,
   settings,
@@ -8,6 +8,7 @@ import {
   hubstaffStatus,
   fetchHubstaffStatusFromBackend,
   submitHubstaffPatToBackend,
+  hydrateStoreFromLocalStorage,
 } from "../lib/store";
 import { ConfirmationModal } from "../components/ConfirmationModal";
 
@@ -61,14 +62,18 @@ export default function Settings() {
     });
   };
 
-  onMount(async () => {
-    await fetchHubstaffStatusFromBackend();
+  createEffect(() => {
     setDefaultRole(settings.defaultRole);
     setTrackingStartDate(settings.trackingStartDate || "2026-08-01");
     setTrainerExpected(settings.thresholds.Trainer.expectedAhtMinutes);
     setTrainerMax(settings.thresholds.Trainer.maxAhtMinutes);
     setReviewerExpected(settings.thresholds.Reviewer.expectedAhtMinutes);
     setReviewerMax(settings.thresholds.Reviewer.maxAhtMinutes);
+  });
+
+  onMount(async () => {
+    hydrateStoreFromLocalStorage();
+    await fetchHubstaffStatusFromBackend();
   });
 
   const isUserConnected = () => hubstaffStatus().isConnected;
@@ -335,6 +340,105 @@ export default function Settings() {
               </div>
             </div>
           )}
+        </Show>
+
+        {/* Hubstaff Organizations & Micro1 Projects Card */}
+        <Show when={hubstaffStatus().user}>
+          <div class="bg-slate-950 p-5 rounded-xl border border-slate-800 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center space-x-2">
+                <svg class="w-4 h-4 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                </svg>
+                <span>Hubstaff Organizations & Micro1 Projects</span>
+              </div>
+            </div>
+
+            <Show
+              when={(hubstaffStatus().organizations || []).length > 0}
+              fallback={
+                <div class="text-xs text-slate-500 py-4 text-center bg-slate-900/30 rounded-lg border border-slate-900">
+                  No Hubstaff organizations found. Connect a valid PAT token to load organizations and projects.
+                </div>
+              }
+            >
+              <div class="space-y-4">
+                <For each={hubstaffStatus().organizations || []}>
+                  {(org) => (
+                    <div class="bg-slate-900/60 p-4 rounded-xl border border-slate-800 space-y-3">
+                      <div class="flex items-center justify-between flex-wrap gap-2">
+                        <div class="flex items-center space-x-2">
+                          <span class="font-semibold text-sm text-slate-100">{org.name}</span>
+                          <Show when={org.is_micro1}>
+                            <span class="px-2 py-0.5 text-[10px] font-bold uppercase rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                              Micro1 Org
+                            </span>
+                          </Show>
+                        </div>
+                        <div class="flex items-center space-x-2 text-xs">
+                          <span class="font-mono text-slate-400 bg-slate-950 px-2 py-1 rounded border border-slate-800">
+                            ID: {org.id}
+                          </span>
+                          <span
+                            class={`px-2 py-0.5 rounded text-[11px] font-medium capitalize ${
+                              org.status === "active"
+                                ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                                : "bg-amber-950 text-amber-400 border border-amber-800"
+                            }`}
+                          >
+                            {org.status}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Display Projects if this is Micro1 organization */}
+                      <Show when={org.is_micro1}>
+                        <div class="mt-3 pt-3 border-t border-slate-800/80 space-y-2">
+                          <div class="text-xs font-semibold text-slate-400 flex items-center space-x-1.5">
+                            <svg class="w-3.5 h-3.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+                            </svg>
+                            <span>Micro1 Projects</span>
+                          </div>
+
+                          <Show
+                            when={(org.projects || []).length > 0}
+                            fallback={
+                              <div class="text-xs text-slate-500 italic py-2 pl-2">
+                                No projects retrieved for Micro1 organization.
+                              </div>
+                            }
+                          >
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                              <For each={org.projects || []}>
+                                {(prj) => (
+                                  <div class="bg-slate-950 p-2.5 rounded-lg border border-slate-800/90 flex items-center justify-between">
+                                    <div class="space-y-0.5 min-w-0 pr-2">
+                                      <div class="font-medium text-slate-200 truncate">{prj.name}</div>
+                                      <div class="text-[10px] font-mono text-sky-400">ID: {prj.id}</div>
+                                    </div>
+                                    <span
+                                      class={`px-2 py-0.5 rounded text-[10px] font-medium capitalize shrink-0 ${
+                                        prj.status === "active"
+                                          ? "bg-sky-950 text-sky-400 border border-sky-800"
+                                          : "bg-slate-900 text-slate-400 border border-slate-800"
+                                      }`}
+                                    >
+                                      {prj.status}
+                                    </span>
+                                  </div>
+                                )}
+                              </For>
+                            </div>
+                          </Show>
+                        </div>
+                      </Show>
+                    </div>
+                  )}
+                </For>
+              </div>
+            </Show>
+          </div>
         </Show>
       </div>
     </div>

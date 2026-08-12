@@ -1,4 +1,4 @@
-import { createSignal, For } from "solid-js";
+import { createSignal, createEffect, For, Show } from "solid-js";
 import {
   Role,
   Subrole,
@@ -9,10 +9,19 @@ import {
   formatDuration,
   formatMinutesDecimal,
   tasks,
+  getUserAvailableRoles,
+  getEffectiveUserRole,
 } from "../lib/store";
 
 export default function Analytics() {
-  const [selectedRole, setSelectedRole] = createSignal<Role | "All">("Reviewer");
+  const [selectedRole, setSelectedRole] = createSignal<Role | "All">(getEffectiveUserRole());
+
+  createEffect(() => {
+    const available = getUserAvailableRoles();
+    if (available.length === 1 && selectedRole() !== available[0]) {
+      setSelectedRole(available[0]);
+    }
+  });
 
   const currentGlobalAHT = () => calculateGlobalAHT(selectedRole());
 
@@ -45,27 +54,29 @@ export default function Analytics() {
         </div>
 
         {/* Role Filter Dropdown */}
-        <div class="flex items-center space-x-3 bg-slate-950 border border-slate-800 p-2 rounded-xl">
-          <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 pl-2">
-            Select Role:
-          </label>
-          <div class="relative">
-            <select
-              value={selectedRole()}
-              onChange={(e) => setSelectedRole(e.currentTarget.value as Role | "All")}
-              class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-100 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none pr-8 cursor-pointer"
-            >
-              <option value="Reviewer">Reviewer Role</option>
-              <option value="Trainer">Trainer Role</option>
-              <option value="All">All Roles Combined</option>
-            </select>
-            <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-slate-400">
-              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-              </svg>
+        <Show when={getUserAvailableRoles().length > 1 || (tasks.some((t) => t.role === "Trainer") && tasks.some((t) => t.role === "Reviewer"))}>
+          <div class="flex items-center space-x-3 bg-slate-950 border border-slate-800 p-2 rounded-xl">
+            <label class="text-xs font-semibold uppercase tracking-wider text-slate-400 pl-2">
+              Select Role:
+            </label>
+            <div class="relative">
+              <select
+                value={selectedRole()}
+                onChange={(e) => setSelectedRole(e.currentTarget.value as Role | "All")}
+                class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-100 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none pr-8 cursor-pointer"
+              >
+                <option value="Trainer">Trainer Role</option>
+                <option value="Reviewer">Reviewer Role</option>
+                <option value="All">All Roles Combined</option>
+              </select>
+              <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-slate-400">
+                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
             </div>
           </div>
-        </div>
+        </Show>
       </div>
 
       {/* Hubstaff Time Utilization & Global AHT Section */}

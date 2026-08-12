@@ -61,8 +61,14 @@ export default function Settings() {
     });
   };
 
-  onMount(() => {
-    fetchHubstaffStatusFromBackend();
+  onMount(async () => {
+    await fetchHubstaffStatusFromBackend();
+    setDefaultRole(settings.defaultRole);
+    setTrackingStartDate(settings.trackingStartDate || "2026-08-01");
+    setTrainerExpected(settings.thresholds.Trainer.expectedAhtMinutes);
+    setTrainerMax(settings.thresholds.Trainer.maxAhtMinutes);
+    setReviewerExpected(settings.thresholds.Reviewer.expectedAhtMinutes);
+    setReviewerMax(settings.thresholds.Reviewer.maxAhtMinutes);
   });
 
   const isUserConnected = () => hubstaffStatus().isConnected;
@@ -479,41 +485,6 @@ export default function Settings() {
           <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
               <div class="flex items-center space-x-2">
-                <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
-                <h3 class="font-bold text-white text-sm">Reviewer Role Benchmarks</h3>
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Expected AHT (Minutes)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="120"
-                  value={reviewerExpected()}
-                  onInput={(e) => setReviewerExpected(parseInt(e.currentTarget.value) || 1)}
-                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
-              </div>
-
-              <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                  Max AHT Threshold (Minutes)
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="180"
-                  value={reviewerMax()}
-                  onInput={(e) => setReviewerMax(parseInt(e.currentTarget.value) || 1)}
-                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
-                />
-              </div>
-            </div>
-
-            <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-              <div class="flex items-center space-x-2">
                 <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
                 <h3 class="font-bold text-white text-sm">Trainer Role Benchmarks</h3>
               </div>
@@ -543,6 +514,41 @@ export default function Settings() {
                   value={trainerMax()}
                   onInput={(e) => setTrainerMax(parseInt(e.currentTarget.value) || 1)}
                   class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+            </div>
+
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+              <div class="flex items-center space-x-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
+                <h3 class="font-bold text-white text-sm">Reviewer Role Benchmarks</h3>
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Expected AHT (Minutes)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="120"
+                  value={reviewerExpected()}
+                  onInput={(e) => setReviewerExpected(parseInt(e.currentTarget.value) || 1)}
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                />
+              </div>
+
+              <div>
+                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                  Max AHT Threshold (Minutes)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="180"
+                  value={reviewerMax()}
+                  onInput={(e) => setReviewerMax(parseInt(e.currentTarget.value) || 1)}
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                 />
               </div>
             </div>

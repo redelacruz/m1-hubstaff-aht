@@ -356,6 +356,23 @@ export const fetchHubstaffStatusFromBackend = async () => {
         isLocked: data.is_locked,
         user: data.user || null,
       });
+
+      if (data.user_settings) {
+        updateUserSettings({
+          defaultRole: data.user_settings.default_role as Role,
+          trackingStartDate: data.user_settings.tracking_start_date,
+          thresholds: {
+            Trainer: {
+              expectedAhtMinutes: data.user_settings.trainer_expected_aht_minutes,
+              maxAhtMinutes: data.user_settings.trainer_max_aht_minutes,
+            },
+            Reviewer: {
+              expectedAhtMinutes: data.user_settings.reviewer_expected_aht_minutes,
+              maxAhtMinutes: data.user_settings.reviewer_max_aht_minutes,
+            },
+          },
+        });
+      }
     }
   } catch (e) {
     console.warn("Could not fetch backend Hubstaff status:", e);

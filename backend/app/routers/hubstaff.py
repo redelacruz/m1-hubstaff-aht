@@ -71,10 +71,14 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
             "connected": False,
             "is_locked": False,
             "user": None,
+            "user_settings": None,
         }
 
     cred_result = await db.execute(select(HubstaffCredential).where(HubstaffCredential.user_id == user.id))
     credential = cred_result.scalar_one_or_none()
+
+    settings_result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    user_setting = settings_result.scalar_one_or_none()
 
     return {
         "connected": bool(credential and credential.is_connected),
@@ -88,6 +92,14 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
             "time_zone": user.time_zone,
             "status": user.status,
         },
+        "user_settings": {
+            "default_role": user_setting.default_role if user_setting else "Reviewer",
+            "tracking_start_date": str(user_setting.tracking_start_date) if user_setting else "2026-08-01",
+            "trainer_expected_aht_minutes": float(user_setting.trainer_expected_aht_minutes) if user_setting else 15.0,
+            "trainer_max_aht_minutes": float(user_setting.trainer_max_aht_minutes) if user_setting else 25.0,
+            "reviewer_expected_aht_minutes": float(user_setting.reviewer_expected_aht_minutes) if user_setting else 10.0,
+            "reviewer_max_aht_minutes": float(user_setting.reviewer_max_aht_minutes) if user_setting else 18.0,
+        } if user_setting else None,
     }
 
 

@@ -8,7 +8,7 @@ import {
   updateTaskLog,
   deleteTaskLog,
   formatDuration,
-  resetTaskLogsToSeed,
+  getUserAvailableRoles,
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
 
@@ -99,16 +99,6 @@ export default function TaskLogPage() {
             View, search, edit, and paginate all submitted task logs across roles.
           </p>
         </div>
-
-        {/* Action / Reset */}
-        <div class="flex items-center space-x-3">
-          <button
-            onClick={resetTaskLogsToSeed}
-            class="px-4 py-2 bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300 font-medium text-xs rounded-xl transition-colors"
-          >
-            Reset Seed Tasks
-          </button>
-        </div>
       </div>
 
       {/* Main Table Container */}
@@ -135,32 +125,34 @@ export default function TaskLogPage() {
               </svg>
             </div>
 
-            <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-              <button
-                onClick={() => { setRoleFilter("All"); setCurrentPage(1); }}
-                class={`px-3 py-1 rounded-lg transition-all ${
-                  roleFilter() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                }`}
-              >
-                All Roles
-              </button>
-              <button
-                onClick={() => { setRoleFilter("Trainer"); setCurrentPage(1); }}
-                class={`px-3 py-1 rounded-lg transition-all ${
-                  roleFilter() === "Trainer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                }`}
-              >
-                Trainer
-              </button>
-              <button
-                onClick={() => { setRoleFilter("Reviewer"); setCurrentPage(1); }}
-                class={`px-3 py-1 rounded-lg transition-all ${
-                  roleFilter() === "Reviewer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                }`}
-              >
-                Reviewer
-              </button>
-            </div>
+            <Show when={getUserAvailableRoles().length > 1 || (tasks.some((t) => t.role === "Trainer") && tasks.some((t) => t.role === "Reviewer"))}>
+              <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
+                <button
+                  onClick={() => { setRoleFilter("All"); setCurrentPage(1); }}
+                  class={`px-3 py-1 rounded-lg transition-all ${
+                    roleFilter() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                  }`}
+                >
+                  All Roles
+                </button>
+                <button
+                  onClick={() => { setRoleFilter("Trainer"); setCurrentPage(1); }}
+                  class={`px-3 py-1 rounded-lg transition-all ${
+                    roleFilter() === "Trainer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                  }`}
+                >
+                  Trainer
+                </button>
+                <button
+                  onClick={() => { setRoleFilter("Reviewer"); setCurrentPage(1); }}
+                  class={`px-3 py-1 rounded-lg transition-all ${
+                    roleFilter() === "Reviewer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                  }`}
+                >
+                  Reviewer
+                </button>
+              </div>
+            </Show>
           </div>
 
           {/* Items Per Page Dropdown Selector */}

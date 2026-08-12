@@ -556,19 +556,18 @@ export default function Settings() {
                 type="date"
                 value={trackingStartDate()}
                 onInput={(e) => setTrackingStartDate(e.currentTarget.value)}
-                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2.5 text-slate-100 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-sky-500 [color-scheme:dark] cursor-pointer"
               />
             </div>
 
             <div class="pt-0 sm:pt-6">
-              {/* WHITE BUTTON ON DARK BACKGROUND */}
               <button
                 type="button"
                 onClick={handleSyncFromStartDate}
                 disabled={isSyncing()}
-                class="w-full sm:w-auto px-5 py-2.5 bg-white hover:bg-slate-100 text-slate-900 font-semibold text-xs rounded-xl shadow-lg shadow-slate-950 transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
+                class="w-full sm:w-auto px-5 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-sky-950 transition-all flex items-center justify-center space-x-2 disabled:opacity-50"
               >
-                <svg class={`w-4 h-4 text-slate-900 ${isSyncing() ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg class={`w-4 h-4 text-white ${isSyncing() ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
                 <span>{isSyncing() ? "Syncing..." : "Sync Hubstaff Data"}</span>

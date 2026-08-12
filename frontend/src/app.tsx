@@ -1,10 +1,16 @@
 import { Router } from "@solidjs/router";
 import { FileRoutes } from "@solidjs/start/router";
-import { Suspense } from "solid-js";
+import { Suspense, onMount } from "solid-js";
 import { Navbar } from "./components/Navbar";
+import { fetchHubstaffStatusFromBackend, hydrateStoreFromLocalStorage } from "./lib/store";
 import "./app.css";
 
 export default function App() {
+  onMount(() => {
+    hydrateStoreFromLocalStorage();
+    fetchHubstaffStatusFromBackend();
+  });
+
   return (
     <Router
       root={(props) => (

@@ -2,7 +2,11 @@ import { defineConfig } from "@solidjs/start/config";
 
 export default defineConfig({
   server: {
-    host: "0.0.0.0",
-    port: 80
-  }
+    port: 80,
+  },
+  nitro: {
+    routeRules: {
+      "/api/**": { proxy: "http://backend:8000/api/**" },
+    },
+  },
 });

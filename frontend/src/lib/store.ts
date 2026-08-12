@@ -341,9 +341,9 @@ export const resetAllToDefault = () => {
 // API Integration Helpers for Hubstaff Auth & Status
 const getApiBaseUrl = () => {
   if (typeof window !== "undefined") {
-    return (window as any)._env_?.VITE_API_BASE_URL || "http://192.168.4.104:8000";
+    return (window as any)._env_?.VITE_API_BASE_URL || "";
   }
-  return "http://192.168.4.104:8000";
+  return "http://backend:8000";
 };
 
 export const fetchHubstaffStatusFromBackend = async () => {

@@ -19,8 +19,25 @@ ON CONFLICT (service_name) DO UPDATE SET status = EXCLUDED.status, updated_at = 
 CREATE TABLE IF NOT EXISTS users (
     id VARCHAR(50) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
     email VARCHAR(100) NOT NULL UNIQUE,
+    time_zone VARCHAR(50) DEFAULT 'UTC',
+    status VARCHAR(30) DEFAULT 'active',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Hubstaff Credentials table for storing PAT, tokens, and lock state
+CREATE TABLE IF NOT EXISTS hubstaff_credentials (
+    id SERIAL PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    pat_token TEXT NOT NULL,
+    access_token TEXT NOT NULL,
+    refresh_token TEXT NOT NULL,
+    token_expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
+    is_connected BOOLEAN NOT NULL DEFAULT true,
+    is_locked BOOLEAN NOT NULL DEFAULT true,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -80,8 +97,8 @@ CREATE TABLE IF NOT EXISTS hubstaff_time_totals (
 );
 
 -- Initial Seed Data
-INSERT INTO users (id, name, email) VALUES
-    ('usr_alex_rivera_01', 'Alex Rivera', 'alex.rivera@company.com')
+INSERT INTO users (id, name, first_name, last_name, email, time_zone, status) VALUES
+    ('usr_alex_rivera_01', 'Alex Rivera', 'Alex', 'Rivera', 'alex.rivera@company.com', 'America/New_York', 'active')
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO projects (id, name, role_type) VALUES

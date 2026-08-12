@@ -56,7 +56,17 @@ export interface HubstaffTimeRecord {
 export interface UserProfile {
   id: string;
   name: string;
+  first_name?: string;
+  last_name?: string;
   email: string;
+  time_zone?: string;
+  status?: string;
+}
+
+export interface HubstaffAuthStatus {
+  isConnected: boolean;
+  isLocked: boolean;
+  user: UserProfile | null;
 }
 
 const STORAGE_KEY = "hubstaff_aht_app_state_v3";
@@ -64,7 +74,11 @@ const STORAGE_KEY = "hubstaff_aht_app_state_v3";
 export const DEFAULT_USER: UserProfile = {
   id: "usr_alex_rivera_01",
   name: "Alex Rivera",
+  first_name: "Alex",
+  last_name: "Rivera",
   email: "alex.rivera@company.com",
+  time_zone: "America/New_York",
+  status: "active",
 };
 
 export const DEFAULT_SETTINGS: UserSettings = {
@@ -80,7 +94,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
 
 export const DEFAULT_HUBSTAFF_TIME: HubstaffTimeRecord = {
   Reviewer: 16200, // 4.5 hours
-  Trainer: 21600,  // 6.0 hours
+  Trainer: 21600, // 6.0 hours
 };
 
 const getSeedTasks = (): TaskLogEntry[] => {
@@ -91,9 +105,15 @@ const getSeedTasks = (): TaskLogEntry[] => {
   const entries: TaskLogEntry[] = [];
   const roles: Role[] = ["Reviewer", "Trainer"];
   const titles = [
-    "Audit Onboarding Case", "Escalation Verification", "SLA Triaging Workshop",
-    "Tier 2 Quality Review", "KB SOP Documentation", "Workflow Optimization",
-    "Customer Care Audit", "Ticket Escalation Analysis", "Quality Assurance Batch"
+    "Audit Onboarding Case",
+    "Escalation Verification",
+    "SLA Triaging Workshop",
+    "Tier 2 Quality Review",
+    "KB SOP Documentation",
+    "Workflow Optimization",
+    "Customer Care Audit",
+    "Ticket Escalation Analysis",
+    "Quality Assurance Batch",
   ];
 
   for (let i = 1; i <= 35; i++) {
@@ -107,7 +127,7 @@ const getSeedTasks = (): TaskLogEntry[] => {
       title: `${titles[i % titles.length]} #${100 + i}`,
       url: `https://hubstaff.com/tasks/${10400 + i}`,
       notes: i % 3 === 0 ? "Offline notes reviewed." : "Verified standard operating procedure.",
-      durationSeconds: 450 + (i * 35) % 900,
+      durationSeconds: 450 + ((i * 35) % 900),
       timerMode: i % 5 === 0 ? "untracked" : "hubstaff",
       createdAt: i < 5 ? minsAgo(i * 40) : daysAgo(Math.floor(i / 3)),
     });
@@ -165,7 +185,10 @@ const loadInitialState = (): LocalState => {
       return {
         settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
         tasks: Array.isArray(parsed.tasks) && parsed.tasks.length > 0 ? parsed.tasks : getSeedTasks(),
-        hubstaffEvents: Array.isArray(parsed.hubstaffEvents) && parsed.hubstaffEvents.length > 0 ? parsed.hubstaffEvents : getSeedHubstaffEvents(),
+        hubstaffEvents:
+          Array.isArray(parsed.hubstaffEvents) && parsed.hubstaffEvents.length > 0
+            ? parsed.hubstaffEvents
+            : getSeedHubstaffEvents(),
         hubstaffTime: { ...DEFAULT_HUBSTAFF_TIME, ...parsed.hubstaffTime },
       };
     }
@@ -186,6 +209,12 @@ export const [settings, setSettings] = createStore<UserSettings>(initialState.se
 export const [tasks, setTasks] = createStore<TaskLogEntry[]>(initialState.tasks);
 export const [hubstaffEvents, setHubstaffEvents] = createStore<HubstaffEvent[]>(initialState.hubstaffEvents);
 export const [hubstaffTime, setHubstaffTime] = createStore<HubstaffTimeRecord>(initialState.hubstaffTime);
+
+export const [hubstaffStatus, setHubstaffStatus] = createSignal<HubstaffAuthStatus>({
+  isConnected: true,
+  isLocked: true,
+  user: DEFAULT_USER,
+});
 
 export const [activeTimerSeconds, setActiveTimerSeconds] = createSignal<number>(435);
 
@@ -220,10 +249,11 @@ export const addTaskLog = (
   entry: Omit<TaskLogEntry, "id" | "userId" | "createdAt">,
   addToHubstaffTime: boolean = true
 ) => {
+  const currentUserId = hubstaffStatus().user?.id || DEFAULT_USER.id;
   const newTask: TaskLogEntry = {
     ...entry,
     id: `task_${Date.now()}`,
-    userId: DEFAULT_USER.id,
+    userId: currentUserId,
     createdAt: new Date().toISOString(),
   };
 
@@ -249,9 +279,10 @@ export const deleteTaskLog = (id: string) => {
 
 export const syncHubstaffData = () => {
   const now = new Date();
+  const currentUserId = hubstaffStatus().user?.id || DEFAULT_USER.id;
   const newStartEvent: HubstaffEvent = {
     id: `evt_sync_${Date.now()}_1`,
-    userId: DEFAULT_USER.id,
+    userId: currentUserId,
     eventName: "Timer Started",
     eventTime: new Date(now.getTime() - 25 * 60 * 1000).toISOString(),
     projectId: "PRJ-901",
@@ -259,7 +290,7 @@ export const syncHubstaffData = () => {
   };
   const newStopEvent: HubstaffEvent = {
     id: `evt_sync_${Date.now()}_2`,
-    userId: DEFAULT_USER.id,
+    userId: currentUserId,
     eventName: "Timer Stopped",
     eventTime: now.toISOString(),
     projectId: "PRJ-901",
@@ -280,9 +311,80 @@ export const resetTaskLogsToSeed = () => {
 
 export const resetAllToDefault = () => {
   setSettings(DEFAULT_SETTINGS);
-  setTasks(getSeedTasks());
-  setHubstaffEvents(getSeedHubstaffEvents());
-  setHubstaffTime(DEFAULT_HUBSTAFF_TIME);
+  setTasks([]);
+  setHubstaffEvents([]);
+  setHubstaffTime({ Reviewer: 0, Trainer: 0 });
+  saveStateToLocalStorage();
+};
+
+// API Integration Helpers for Hubstaff Auth & Status
+const getApiBaseUrl = () => {
+  if (typeof window !== "undefined") {
+    return (window as any)._env_?.VITE_API_BASE_URL || "http://192.168.4.104:8000";
+  }
+  return "http://192.168.4.104:8000";
+};
+
+export const fetchHubstaffStatusFromBackend = async () => {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/status`);
+    if (res.ok) {
+      const data = await res.json();
+      setHubstaffStatus({
+        isConnected: data.connected,
+        isLocked: data.is_locked,
+        user: data.user || null,
+      });
+    }
+  } catch (e) {
+    console.warn("Could not fetch backend Hubstaff status:", e);
+  }
+};
+
+export const submitHubstaffPatToBackend = async (patToken: string) => {
+  const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/pat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ pat_token: patToken }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.detail || "Failed to authenticate Hubstaff Personal Access Token.");
+  }
+
+  // Clear local task logs and events for the new user profile
+  setTasks([]);
+  setHubstaffEvents([]);
+  setHubstaffTime({ Reviewer: 0, Trainer: 0 });
+
+  setHubstaffStatus({
+    isConnected: true,
+    isLocked: true,
+    user: data.user,
+  });
+
+  saveStateToLocalStorage();
+  return data.user;
+};
+
+export const disconnectHubstaffAccountInBackend = async () => {
+  try {
+    await fetch(`${getApiBaseUrl()}/api/hubstaff/disconnect`, { method: "DELETE" });
+  } catch (e) {
+    console.warn("Disconnect call error:", e);
+  }
+
+  setTasks([]);
+  setHubstaffEvents([]);
+  setHubstaffTime({ Reviewer: 0, Trainer: 0 });
+
+  setHubstaffStatus({
+    isConnected: false,
+    isLocked: false,
+    user: null,
+  });
+
   saveStateToLocalStorage();
 };
 
@@ -322,16 +424,16 @@ export const getFilteredTasks = (
   timeframe?: "week" | "month" | "global"
 ): TaskLogEntry[] => {
   const now = new Date();
-  
+
   return tasks.filter((task: TaskLogEntry) => {
     if (roleFilter && roleFilter !== "All" && task.role !== roleFilter) {
       return false;
     }
-    
+
     if (!timeframe || timeframe === "global") return true;
 
     const taskDate = new Date(task.createdAt);
-    
+
     if (timeframe === "week") {
       const startOfWeek = new Date(now);
       const day = now.getDay();
@@ -340,7 +442,7 @@ export const getFilteredTasks = (
       startOfWeek.setHours(0, 0, 0, 0);
       return taskDate >= startOfWeek;
     }
-    
+
     if (timeframe === "month") {
       const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
       return taskDate >= startOfMonth;
@@ -350,9 +452,7 @@ export const getFilteredTasks = (
   });
 };
 
-export const calculateGlobalAHT = (
-  roleFilter: Role | "All"
-): GlobalAhtBreakdown => {
+export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown => {
   const filteredTasks = getFilteredTasks(roleFilter, "global");
   const taskCount = filteredTasks.length;
 
@@ -405,7 +505,13 @@ export const getAhtStatus = (
   avgMinutes: number,
   expectedMinutes: number,
   maxMinutes: number
-): { status: "optimal" | "warning" | "exceeded" | "no_data"; label: string; colorClass: string; borderClass: string; bgClass: string } => {
+): {
+  status: "optimal" | "warning" | "exceeded" | "no_data";
+  label: string;
+  colorClass: string;
+  borderClass: string;
+  bgClass: string;
+} => {
   if (avgMinutes === 0) {
     return {
       status: "no_data",

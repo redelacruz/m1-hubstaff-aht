@@ -7,6 +7,7 @@ from sqlalchemy import text
 from app.config import settings
 from app.database import get_db, engine, Base
 import app.models  # Register models with SQLAlchemy Base metadata
+from app.routers import hubstaff
 
 
 @asynccontextmanager
@@ -33,6 +34,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Include Routers
+app.include_router(hubstaff.router)
 
 
 @app.get("/")

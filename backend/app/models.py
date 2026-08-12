@@ -1,6 +1,6 @@
 from datetime import datetime, date
 from typing import Optional
-from sqlalchemy import String, Integer, Numeric, Text, Date, DateTime, ForeignKey, func
+from sqlalchemy import String, Integer, Numeric, Text, Date, DateTime, Boolean, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -22,7 +22,11 @@ class User(Base):
 
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
+    first_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    last_name: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     email: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
+    time_zone: Mapped[Optional[str]] = mapped_column(String(50), default="UTC", nullable=True)
+    status: Mapped[Optional[str]] = mapped_column(String(30), default="active", nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -43,6 +47,30 @@ class User(Base):
     time_totals: Mapped[Optional["HubstaffTimeTotal"]] = relationship(
         "HubstaffTimeTotal", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
+    credential: Mapped[Optional["HubstaffCredential"]] = relationship(
+        "HubstaffCredential", back_populates="user", uselist=False, cascade="all, delete-orphan"
+    )
+
+
+class HubstaffCredential(Base):
+    __tablename__ = "hubstaff_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(50), ForeignKey("users.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    pat_token: Mapped[str] = mapped_column(Text, nullable=False)
+    access_token: Mapped[str] = mapped_column(Text, nullable=False)
+    refresh_token: Mapped[str] = mapped_column(Text, nullable=False)
+    token_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    is_connected: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_locked: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationship
+    user: Mapped["User"] = relationship("User", back_populates="credential")
 
 
 class Project(Base):

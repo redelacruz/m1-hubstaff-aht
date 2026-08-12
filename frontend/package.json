@@ -1,0 +1,23 @@
+{
+  "name": "hubstaff-frontend",
+  "type": "module",
+  "scripts": {
+    "dev": "vinxi dev --host 0.0.0.0 --port 3000",
+    "build": "vinxi build",
+    "start": "vinxi start"
+  },
+  "dependencies": {
+    "@solidjs/router": "^0.13.0",
+    "@solidjs/start": "^1.0.0",
+    "solid-js": "^1.8.15",
+    "vinxi": "^0.3.11"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "autoprefixer": "^10.4.18",
+    "postcss": "^8.4.38",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5.4.0",
+    "vite": "^5.2.0"
+  }
+}

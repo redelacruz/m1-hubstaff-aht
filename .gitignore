@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build and Output directories
+dist/
+.output/
+.solid/
+.vinxi/
+build/
+*.egg-info/
+
+# Environment files
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+.pytest_cache/
+.coverage
+
+# Database / Persistent Storage
+pgdata/
+*.db
+*.sqlite
+
+# IDEs & System files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo

@@ -1,0 +1,76 @@
+name: hubstaff-tracking-app
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: hubstaff_db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-hubstaff_db}
+      POSTGRES_USER: ${POSTGRES_USER:-hubstaff_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hubstaff_password_secure_123}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    networks:
+      - hubstaff-aht-app_dev
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-hubstaff_user} -d $${POSTGRES_DB:-hubstaff_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: hubstaff_backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+asyncpg://hubstaff_user:hubstaff_password_secure_123@db:5432/hubstaff_db}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://192.168.4.103:3000,http://192.168.4.103,http://192.168.4.104:8000,http://localhost:3000,https://hubstaff-app.redelacruz.com}
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      hubstaff-aht-app_dev:
+      local_lan:
+        ipv4_address: 192.168.4.104
+      tunnel:
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: hubstaff_frontend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://192.168.4.104:8000}
+      PORT: 3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      hubstaff-aht-app_dev:
+      local_lan:
+        ipv4_address: 192.168.4.103
+      tunnel:
+
+networks:
+  hubstaff-aht-app_dev:
+    driver: bridge
+    internal: true
+  local_lan:
+    external: true
+  tunnel:
+    external: true
+
+volumes:
+  postgres_data:

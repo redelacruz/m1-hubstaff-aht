@@ -1,16 +1,28 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
 
 from app.config import settings
-from app.database import get_db
+from app.database import get_db, engine, Base
+import app.models  # Register models with SQLAlchemy Base metadata
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Auto-create tables on application startup
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     version="1.0.0",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # Full CORS Configuration
@@ -22,20 +34,23 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/")
 async def root():
     return {
         "message": "Welcome to Hubstaff Tracking App API",
         "status": "online",
-        "docs": "/docs"
+        "docs": "/docs",
     }
+
 
 @app.get("/api/health")
 async def health_check():
     return {
         "status": "healthy",
-        "service": "fastapi-backend"
+        "service": "fastapi-backend",
     }
+
 
 @app.get("/api/db-check")
 async def db_check(db: AsyncSession = Depends(get_db)):
@@ -45,10 +60,10 @@ async def db_check(db: AsyncSession = Depends(get_db)):
         statuses = {row[0]: row[1] for row in rows}
         return {
             "database_connection": "successful",
-            "system_statuses": statuses
+            "system_statuses": statuses,
         }
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
-            detail=f"Database connection failed: {str(e)}"
+            status_code=500,
+            detail=f"Database connection failed: {str(e)}",
         )

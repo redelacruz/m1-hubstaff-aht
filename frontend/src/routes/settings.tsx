@@ -9,7 +9,6 @@ import {
   hubstaffStatus,
   fetchHubstaffStatusFromBackend,
   submitHubstaffPatToBackend,
-  disconnectHubstaffAccountInBackend,
 } from "../lib/store";
 import { ConfirmationModal } from "../components/ConfirmationModal";
 
@@ -37,6 +36,7 @@ export default function Settings() {
   const [patInput, setPatInput] = createSignal<string>("");
   const [showPatToken, setShowPatToken] = createSignal<boolean>(false);
   const [isPatLoading, setIsPatLoading] = createSignal<boolean>(false);
+  const [isUnlockedByChoice, setIsUnlockedByChoice] = createSignal<boolean>(false);
 
   // Warning Modals State
   const [isUnlockModalOpen, setIsUnlockModalOpen] = createSignal<boolean>(false);
@@ -49,6 +49,10 @@ export default function Settings() {
   onMount(() => {
     fetchHubstaffStatusFromBackend();
   });
+
+  const isFieldLocked = () => {
+    return hubstaffStatus().isConnected && hubstaffStatus().isLocked && !isUnlockedByChoice();
+  };
 
   const handleSaveSettings = (e: Event) => {
     e.preventDefault();
@@ -106,20 +110,21 @@ export default function Settings() {
     setIsUnlockModalOpen(true);
   };
 
-  const handleConfirmUnlock = async () => {
+  const handleConfirmUnlock = () => {
     setIsUnlockModalOpen(false);
-    setIsPatLoading(true);
-    try {
-      await disconnectHubstaffAccountInBackend();
-      setPatInput("");
-      setToastMsg("Hubstaff PAT unlocked and system data cleared. You can now enter a new PAT.");
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 3500);
-    } catch (e: any) {
-      alert(`Error clearing Hubstaff state: ${e.message}`);
-    } finally {
-      setIsPatLoading(false);
-    }
+    setIsUnlockedByChoice(true);
+    setPatInput("");
+    setToastMsg("PAT field unlocked. You may enter a new PAT or cancel to keep existing account & data.");
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 4000);
+  };
+
+  const handleCancelUnlock = () => {
+    setIsUnlockedByChoice(false);
+    setPatInput("");
+    setToastMsg("Cancelled. Existing Hubstaff account and all data retained.");
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 3000);
   };
 
   const handleSubmitPatClick = (e: Event) => {
@@ -136,7 +141,8 @@ export default function Settings() {
     setIsPatLoading(true);
     try {
       const user = await submitHubstaffPatToBackend(patInput().trim());
-      setToastMsg(`Successfully connected to Hubstaff as ${user.name}!`);
+      setIsUnlockedByChoice(false);
+      setToastMsg(`Successfully connected new Hubstaff account as ${user.name}!`);
       setSavedSuccess(true);
       setPatInput("");
       setTimeout(() => setSavedSuccess(false), 4000);
@@ -159,28 +165,28 @@ export default function Settings() {
         </div>
       </Show>
 
-      {/* Confirmation Modal 1: Unlock Warning */}
+      {/* Confirmation Modal 1: Unlock Field Notice */}
       <ConfirmationModal
         isOpen={isUnlockModalOpen()}
-        title="Disconnect & Unlock PAT Field"
-        warningText="⚠️ Warning: Account Disconnect & Data Purge"
-        description="Unlocking the PAT field to connect a new Hubstaff account will wipe all current system data (logged tasks, timer events, and time totals) to initialize the environment for the new user. Are you sure you want to unlock?"
-        confirmText="Unlock & Clear Current Data"
-        cancelText="Keep Account Connected"
-        isDestructive={true}
+        title="Unlock Field to Change Hubstaff Account"
+        warningText="⚠️ Notice: Account Change Warning"
+        description="Unlocking this field allows you to enter a new Hubstaff Personal Access Token. Please note that submitting and connecting a new account will wipe all existing data (logged tasks, timer events, and time totals). You can cancel at any time before submitting a new token to keep your existing account and data intact."
+        confirmText="Unlock Field"
+        cancelText="Keep Connected Account"
+        isDestructive={false}
         isLoading={isPatLoading()}
         onConfirm={handleConfirmUnlock}
         onCancel={() => setIsUnlockModalOpen(false)}
       />
 
-      {/* Confirmation Modal 2: Submit Warning */}
+      {/* Confirmation Modal 2: Submit & Wipe Confirmation */}
       <ConfirmationModal
         isOpen={isSubmitModalOpen()}
-        title="Confirm New Hubstaff PAT Submission"
+        title="Confirm New Hubstaff Account Connection"
         warningText="🚨 Critical Warning: Permanent Data Reset"
-        description="Submitting a new Personal Access Token will execute a POST request to account.hubstaff.com/access_tokens and GET /v2/users/me. If authenticated, all existing task logs and metrics will be permanently deleted and replaced with the new user's profile. Proceed?"
-        confirmText="Authenticate & Wipe Old Data"
-        cancelText="Review PAT"
+        description="Submitting and connecting this new Hubstaff account will permanently delete all existing task logs, activity history, and metrics for the currently connected user. This action cannot be undone. Are you sure you want to proceed?"
+        confirmText="Wipe Existing Data & Connect New Account"
+        cancelText="Back to Settings"
         isDestructive={true}
         isLoading={isPatLoading()}
         onConfirm={handleConfirmSubmit}
@@ -221,11 +227,11 @@ export default function Settings() {
 
           {/* Connection Lock Badge */}
           <Show
-            when={hubstaffStatus().isConnected && hubstaffStatus().isLocked}
+            when={isFieldLocked()}
             fallback={
               <span class="px-3 py-1 bg-amber-950 text-amber-300 border border-amber-800/80 rounded-full font-bold text-xs flex items-center space-x-1.5">
                 <span class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-                <span>Not Connected / Unlocked</span>
+                <span>{hubstaffStatus().isConnected ? "Unlocked for New PAT" : "Not Connected / Unlocked"}</span>
               </span>
             }
           >
@@ -241,7 +247,7 @@ export default function Settings() {
         {/* Form Controls */}
         <div class="space-y-4">
           <Show
-            when={hubstaffStatus().isConnected && hubstaffStatus().isLocked}
+            when={isFieldLocked()}
             fallback={
               <form onSubmit={handleSubmitPatClick} class="space-y-4">
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-300">
@@ -278,11 +284,25 @@ export default function Settings() {
                     </svg>
                   </a>
 
-                  <button
-                    type="submit"
-                    disabled={isPatLoading()}
-                    class="px-5 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-sky-950 transition-all flex items-center space-x-2 disabled:opacity-50"
-                  >
+                  <div class="flex items-center space-x-3">
+                    <Show when={hubstaffStatus().isConnected}>
+                      <button
+                        type="button"
+                        onClick={handleCancelUnlock}
+                        class="px-4 py-2.5 bg-slate-950 hover:bg-slate-800 border border-slate-700 hover:border-slate-600 text-slate-200 hover:text-white font-semibold text-xs rounded-xl transition-all shadow-sm flex items-center space-x-1.5"
+                      >
+                        <svg class="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                        <span>Cancel</span>
+                      </button>
+                    </Show>
+
+                    <button
+                      type="submit"
+                      disabled={isPatLoading()}
+                      class="px-5 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-bold text-xs rounded-xl shadow-lg shadow-sky-950 transition-all flex items-center space-x-2 disabled:opacity-50"
+                    >
                     <Show when={isPatLoading()}>
                       <svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -291,7 +311,8 @@ export default function Settings() {
                     <span>{isPatLoading() ? "Authenticating..." : "Connect Hubstaff Account"}</span>
                   </button>
                 </div>
-              </form>
+              </div>
+            </form>
             }
           >
             {/* Locked Display State */}
@@ -311,9 +332,9 @@ export default function Settings() {
                   type="button"
                   onClick={handleUnlockClick}
                   disabled={isPatLoading()}
-                  class="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-rose-300 font-bold text-xs rounded-xl transition-all flex items-center space-x-2"
+                  class="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-amber-300 font-bold text-xs rounded-xl transition-all flex items-center space-x-2"
                 >
-                  <svg class="w-4 h-4 text-rose-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <svg class="w-4 h-4 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 11V7a4 4 0 118 0m-4 8v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2z" />
                   </svg>
                   <span>Disconnect / Connect New Account</span>

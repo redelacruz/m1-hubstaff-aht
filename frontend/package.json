@@ -2,7 +2,7 @@
   "name": "hubstaff-frontend",
   "type": "module",
   "scripts": {
-    "dev": "vinxi dev --host 0.0.0.0 --port 3000",
+    "dev": "vinxi dev --host 0.0.0.0 --port 80",
     "build": "vinxi build",
     "start": "vinxi start"
   },

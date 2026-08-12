@@ -6,7 +6,17 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import delete
 
-from app.models import User, HubstaffCredential, TaskLog, HubstaffEvent, HubstaffTimeTotal, UserSettings
+from app.models import (
+    User,
+    HubstaffCredential,
+    TaskLog,
+    HubstaffEvent,
+    HubstaffTimeTotal,
+    UserSettings,
+    Organization,
+    Project,
+)
+from sqlalchemy import select
 
 logger = logging.getLogger(__name__)
 
@@ -111,6 +121,146 @@ async def fetch_user_me(access_token: str) -> Dict[str, Any]:
             )
 
 
+async def fetch_user_organizations(access_token: str) -> list[Dict[str, Any]]:
+    """
+    Fetches user organizations from GET https://api.hubstaff.com/v2/organizations
+    Only extracts id, name, and status.
+    """
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            response = await client.get(
+                f"{HUBSTAFF_API_BASE_URL}/organizations",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "*/*",
+                },
+            )
+
+            if response.status_code != 200:
+                try:
+                    err_json = response.json()
+                    error_msg = err_json.get("error") or err_json.get("code") or "Error fetching organizations"
+                    details = err_json.get("details", [])
+                    detail_str = f"{error_msg} ({', '.join(details)})" if details else error_msg
+                except Exception:
+                    detail_str = f"Hubstaff API error (status {response.status_code})"
+
+                raise HTTPException(
+                    status_code=response.status_code if response.status_code in (400, 401, 403, 429) else 400,
+                    detail=f"Failed to fetch Hubstaff organizations: {detail_str}",
+                )
+
+            data = response.json()
+            raw_orgs = data.get("organizations", [])
+            orgs = []
+            for org in raw_orgs:
+                orgs.append({
+                    "id": str(org["id"]),
+                    "name": org.get("name", ""),
+                    "status": org.get("status", "active"),
+                })
+            return orgs
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Unable to connect to Hubstaff API: {str(e)}",
+            )
+
+
+async def fetch_organization_projects(access_token: str, organization_id: str | int) -> list[Dict[str, Any]]:
+    """
+    Fetches projects for an organization from GET https://api.hubstaff.com/v2/organizations/{organization_id}/projects
+    Only extracts id, name, and status.
+    """
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        try:
+            response = await client.get(
+                f"{HUBSTAFF_API_BASE_URL}/organizations/{organization_id}/projects",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "*/*",
+                },
+            )
+
+            if response.status_code != 200:
+                try:
+                    err_json = response.json()
+                    error_msg = err_json.get("error") or err_json.get("code") or "Error fetching organization projects"
+                    details = err_json.get("details", [])
+                    detail_str = f"{error_msg} ({', '.join(details)})" if details else error_msg
+                except Exception:
+                    detail_str = f"Hubstaff API error (status {response.status_code})"
+
+                raise HTTPException(
+                    status_code=response.status_code if response.status_code in (400, 401, 403, 429) else 400,
+                    detail=f"Failed to fetch Hubstaff organization projects: {detail_str}",
+                )
+
+            data = response.json()
+            raw_projects = data.get("projects", [])
+            projects = []
+            for prj in raw_projects:
+                projects.append({
+                    "id": str(prj["id"]),
+                    "name": prj.get("name", ""),
+                    "status": prj.get("status", "active"),
+                })
+            return projects
+        except httpx.RequestError as e:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Unable to connect to Hubstaff API: {str(e)}",
+            )
+
+
+async def sync_user_organizations_and_projects(user_id: str, access_token: str, db: AsyncSession):
+    """
+    Fetches organizations from Hubstaff API, saves them into PostgreSQL,
+    and populates projects specifically for the Micro1 organization.
+    """
+    orgs_data = await fetch_user_organizations(access_token)
+
+    # Wipe existing orgs and projects for this user
+    existing_org_ids_subquery = select(Organization.id).where(Organization.user_id == user_id)
+    await db.execute(delete(Project).where(Project.organization_id.in_(existing_org_ids_subquery)))
+    await db.execute(delete(Organization).where(Organization.user_id == user_id))
+    await db.flush()
+
+    for org_item in orgs_data:
+        org_id_str = org_item["id"]
+        org_name = org_item["name"]
+        org_status = org_item["status"]
+
+        new_org = Organization(
+            id=org_id_str,
+            user_id=user_id,
+            name=org_name,
+            status=org_status,
+        )
+        db.add(new_org)
+        await db.flush()
+
+        # Check if organization is Micro1 (case-insensitive substring match)
+        if "micro1" in org_name.lower():
+            projects_data = await fetch_organization_projects(access_token, org_id_str)
+            for prj_item in projects_data:
+                prj_id_str = prj_item["id"]
+                prj_name = prj_item["name"]
+                prj_status = prj_item["status"]
+
+                new_project = Project(
+                    id=prj_id_str,
+                    organization_id=org_id_str,
+                    name=prj_name,
+                    status=prj_status,
+                    role_type="Unassigned",
+                )
+                db.add(new_project)
+            await db.flush()
+
+    await db.commit()
+
+
 async def provision_single_user_environment(
     pat_token: str,
     token_response: Dict[str, Any],
@@ -119,11 +269,13 @@ async def provision_single_user_environment(
 ) -> Tuple[User, HubstaffCredential]:
     """
     Wipes all existing database records to enforce single-user architecture,
-    then provisions the newly authenticated Hubstaff user and credential records.
+    then provisions the newly authenticated Hubstaff user, credentials, organizations, and projects.
     """
     # 1. Wipe all existing system data
     await db.execute(delete(TaskLog))
     await db.execute(delete(HubstaffEvent))
+    await db.execute(delete(Project))
+    await db.execute(delete(Organization))
     await db.execute(delete(HubstaffTimeTotal))
     await db.execute(delete(UserSettings))
     await db.execute(delete(HubstaffCredential))
@@ -183,6 +335,13 @@ async def provision_single_user_environment(
     db.add(new_totals)
 
     await db.commit()
+
+    # 6. Sync organizations & Micro1 projects from Hubstaff
+    try:
+        await sync_user_organizations_and_projects(user_id_str, access_token, db)
+    except Exception as e:
+        logger.warning(f"Could not fetch organizations during PAT provisioning: {e}")
+
     await db.refresh(new_user)
     await db.refresh(new_credential)
 

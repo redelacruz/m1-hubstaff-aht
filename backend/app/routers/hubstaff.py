@@ -5,8 +5,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
 
 from app.database import get_db
-from app.models import User, HubstaffCredential, TaskLog, HubstaffEvent, HubstaffTimeTotal, UserSettings
-from app.services.hubstaff import exchange_pat_for_tokens, fetch_user_me, provision_single_user_environment
+from app.models import (
+    User,
+    HubstaffCredential,
+    TaskLog,
+    HubstaffEvent,
+    HubstaffTimeTotal,
+    UserSettings,
+    Organization,
+    Project,
+)
+from app.services.hubstaff import exchange_pat_for_tokens, fetch_user_me, provision_single_user_environment, sync_user_organizations_and_projects
 
 router = APIRouter(prefix="/api/hubstaff", tags=["Hubstaff Integration"])
 
@@ -67,18 +76,61 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
     user = result.scalar_one_or_none()
 
     if not user:
-        return {
-            "connected": False,
-            "is_locked": False,
-            "user": None,
-            "user_settings": None,
-        }
+        # Provision default local user & settings for seed / unauthenticated state
+        user = User(
+            id="usr_alex_rivera_01",
+            name="Alex Rivera",
+            first_name="Alex",
+            last_name="Rivera",
+            email="alex.rivera@company.com",
+            time_zone="America/New_York",
+            status="active",
+        )
+        db.add(user)
+        await db.flush()
+
+        user_setting = UserSettings(
+            user_id=user.id,
+            default_role="Reviewer",
+            tracking_start_date=datetime.now().date(),
+            trainer_expected_aht_minutes=15.0,
+            trainer_max_aht_minutes=25.0,
+            reviewer_expected_aht_minutes=10.0,
+            reviewer_max_aht_minutes=18.0,
+        )
+        db.add(user_setting)
+        await db.commit()
+        await db.refresh(user)
+        await db.refresh(user_setting)
 
     cred_result = await db.execute(select(HubstaffCredential).where(HubstaffCredential.user_id == user.id))
     credential = cred_result.scalar_one_or_none()
 
     settings_result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
     user_setting = settings_result.scalar_one_or_none()
+
+    # Load organizations and projects
+    orgs_result = await db.execute(select(Organization).where(Organization.user_id == user.id))
+    orgs = orgs_result.scalars().all()
+
+    orgs_payload = []
+    for org in orgs:
+        prjs_result = await db.execute(select(Project).where(Project.organization_id == org.id))
+        prjs = prjs_result.scalars().all()
+        orgs_payload.append({
+            "id": org.id,
+            "name": org.name,
+            "status": org.status,
+            "is_micro1": "micro1" in org.name.lower(),
+            "projects": [
+                {
+                    "id": prj.id,
+                    "name": prj.name,
+                    "status": prj.status,
+                }
+                for prj in prjs
+            ],
+        })
 
     return {
         "connected": bool(credential and credential.is_connected),
@@ -100,7 +152,24 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
             "reviewer_expected_aht_minutes": float(user_setting.reviewer_expected_aht_minutes) if user_setting else 10.0,
             "reviewer_max_aht_minutes": float(user_setting.reviewer_max_aht_minutes) if user_setting else 18.0,
         } if user_setting else None,
+        "organizations": orgs_payload,
     }
+
+
+@router.post("/sync-organizations")
+async def sync_organizations_endpoint(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).limit(1))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="No user found.")
+
+    cred_result = await db.execute(select(HubstaffCredential).where(HubstaffCredential.user_id == user.id))
+    credential = cred_result.scalar_one_or_none()
+    if not credential or not credential.access_token:
+        raise HTTPException(status_code=400, detail="Hubstaff account is not connected.")
+
+    await sync_user_organizations_and_projects(user.id, credential.access_token, db)
+    return {"success": True, "message": "Organizations and projects synced successfully."}
 
 
 @router.put("/user-settings")
@@ -108,7 +177,17 @@ async def update_db_user_settings(request: UserSettingsUpdateRequest, db: AsyncS
     result = await db.execute(select(User).limit(1))
     user = result.scalar_one_or_none()
     if not user:
-        return {"success": False, "message": "No active user connected yet."}
+        user = User(
+            id="usr_alex_rivera_01",
+            name="Alex Rivera",
+            first_name="Alex",
+            last_name="Rivera",
+            email="alex.rivera@company.com",
+            time_zone="America/New_York",
+            status="active",
+        )
+        db.add(user)
+        await db.flush()
 
     settings_result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
     user_setting = settings_result.scalar_one_or_none()
@@ -145,6 +224,8 @@ async def update_db_user_settings(request: UserSettingsUpdateRequest, db: AsyncS
 async def disconnect_hubstaff_account(db: AsyncSession = Depends(get_db)):
     await db.execute(delete(TaskLog))
     await db.execute(delete(HubstaffEvent))
+    await db.execute(delete(Project))
+    await db.execute(delete(Organization))
     await db.execute(delete(HubstaffTimeTotal))
     await db.execute(delete(UserSettings))
     await db.execute(delete(HubstaffCredential))

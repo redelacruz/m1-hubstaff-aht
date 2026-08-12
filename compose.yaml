@@ -53,6 +53,8 @@ services:
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://192.168.4.104:8000}
       PORT: 80
+    volumes:
+      - ./frontend/src:/app/src
     depends_on:
       - backend
     networks:

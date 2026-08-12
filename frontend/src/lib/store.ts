@@ -240,6 +240,27 @@ export const updateUserSettings = (newSettings: Partial<UserSettings>) => {
   saveStateToLocalStorage();
 };
 
+export const saveUserSettingsToBackend = async (newSettings: Partial<UserSettings>) => {
+  try {
+    const payload = {
+      default_role: newSettings.defaultRole || settings.defaultRole,
+      tracking_start_date: newSettings.trackingStartDate || settings.trackingStartDate,
+      trainer_expected_aht_minutes: newSettings.thresholds?.Trainer.expectedAhtMinutes ?? settings.thresholds.Trainer.expectedAhtMinutes,
+      trainer_max_aht_minutes: newSettings.thresholds?.Trainer.maxAhtMinutes ?? settings.thresholds.Trainer.maxAhtMinutes,
+      reviewer_expected_aht_minutes: newSettings.thresholds?.Reviewer.expectedAhtMinutes ?? settings.thresholds.Reviewer.expectedAhtMinutes,
+      reviewer_max_aht_minutes: newSettings.thresholds?.Reviewer.maxAhtMinutes ?? settings.thresholds.Reviewer.maxAhtMinutes,
+    };
+
+    await fetch(`${getApiBaseUrl()}/api/hubstaff/user-settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (e) {
+    console.warn("Could not save settings to backend database:", e);
+  }
+};
+
 export const addHubstaffTime = (role: Role, additionalSeconds: number) => {
   setHubstaffTime(role, (prev: number) => prev + additionalSeconds);
   saveStateToLocalStorage();

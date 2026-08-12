@@ -1,3 +1,4 @@
+from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +13,15 @@ router = APIRouter(prefix="/api/hubstaff", tags=["Hubstaff Integration"])
 
 class PatSubmissionRequest(BaseModel):
     pat_token: str = Field(..., min_length=10, description="Hubstaff Personal Access Token string")
+
+
+class UserSettingsUpdateRequest(BaseModel):
+    default_role: str = Field("Reviewer", description="Default role ('Trainer' or 'Reviewer')")
+    tracking_start_date: str = Field("2026-08-01", description="Tracking start date YYYY-MM-DD")
+    trainer_expected_aht_minutes: float = Field(15.0, ge=1.0)
+    trainer_max_aht_minutes: float = Field(25.0, ge=1.0)
+    reviewer_expected_aht_minutes: float = Field(10.0, ge=1.0)
+    reviewer_max_aht_minutes: float = Field(18.0, ge=1.0)
 
 
 @router.post("/pat")
@@ -79,6 +89,44 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
             "status": user.status,
         },
     }
+
+
+@router.put("/user-settings")
+async def update_db_user_settings(request: UserSettingsUpdateRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).limit(1))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"success": False, "message": "No active user connected yet."}
+
+    settings_result = await db.execute(select(UserSettings).where(UserSettings.user_id == user.id))
+    user_setting = settings_result.scalar_one_or_none()
+
+    try:
+        parsed_date = datetime.strptime(request.tracking_start_date, "%Y-%m-%d").date()
+    except ValueError:
+        parsed_date = datetime.now().date()
+
+    if not user_setting:
+        user_setting = UserSettings(
+            user_id=user.id,
+            default_role=request.default_role,
+            tracking_start_date=parsed_date,
+            trainer_expected_aht_minutes=request.trainer_expected_aht_minutes,
+            trainer_max_aht_minutes=request.trainer_max_aht_minutes,
+            reviewer_expected_aht_minutes=request.reviewer_expected_aht_minutes,
+            reviewer_max_aht_minutes=request.reviewer_max_aht_minutes,
+        )
+        db.add(user_setting)
+    else:
+        user_setting.default_role = request.default_role
+        user_setting.tracking_start_date = parsed_date
+        user_setting.trainer_expected_aht_minutes = request.trainer_expected_aht_minutes
+        user_setting.trainer_max_aht_minutes = request.trainer_max_aht_minutes
+        user_setting.reviewer_expected_aht_minutes = request.reviewer_expected_aht_minutes
+        user_setting.reviewer_max_aht_minutes = request.reviewer_max_aht_minutes
+
+    await db.commit()
+    return {"success": True, "message": "User settings updated in database."}
 
 
 @router.delete("/disconnect")

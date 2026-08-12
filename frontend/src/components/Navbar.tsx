@@ -1,5 +1,5 @@
 import { useLocation } from "@solidjs/router";
-import { DEFAULT_USER, settings } from "../lib/store";
+import { DEFAULT_USER, hubstaffStatus, settings } from "../lib/store";
 
 export function Navbar() {
   const location = useLocation();
@@ -8,6 +8,17 @@ export function Navbar() {
     if (path === "/" && location.pathname === "/") return true;
     if (path !== "/" && location.pathname.startsWith(path)) return true;
     return false;
+  };
+
+  const currentUser = () => hubstaffStatus().user;
+  const userName = () => currentUser()?.name || DEFAULT_USER.name;
+  const userInitials = () => {
+    const name = userName();
+    const parts = name.split(" ").filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+    }
+    return name.slice(0, 2).toUpperCase();
   };
 
   return (
@@ -90,13 +101,13 @@ export function Navbar() {
             </a>
           </nav>
 
-          {/* User Profile Badge */}
+          {/* User Profile Badge (Dynamically Synced with Connected Account) */}
           <div class="hidden lg:flex items-center space-x-3 bg-slate-950 border border-slate-800 rounded-lg py-1.5 px-3">
             <div class="w-7 h-7 rounded-full bg-slate-800 text-sky-400 font-bold text-xs flex items-center justify-center border border-slate-700">
-              AR
+              {userInitials()}
             </div>
             <div class="text-left text-xs">
-              <div class="font-medium text-slate-200">{DEFAULT_USER.name}</div>
+              <div class="font-medium text-slate-200">{userName()}</div>
               <div class="text-[10px] text-slate-400 flex items-center space-x-1">
                 <span>Default:</span>
                 <span class="text-sky-300 font-semibold">{settings.defaultRole}</span>

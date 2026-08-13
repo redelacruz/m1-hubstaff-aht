@@ -178,7 +178,7 @@ export default function TaskLogPage() {
                 <button
                   onClick={() => { setRoleFilter("Trainer"); setCurrentPage(1); }}
                   class={`px-3 py-1 rounded-lg transition-all ${
-                    roleFilter() === "Trainer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                    roleFilter() === "Trainer" ? "bg-sky-600 text-white font-medium shadow-md shadow-sky-950" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
                   Trainer
@@ -186,7 +186,7 @@ export default function TaskLogPage() {
                 <button
                   onClick={() => { setRoleFilter("Reviewer"); setCurrentPage(1); }}
                   class={`px-3 py-1 rounded-lg transition-all ${
-                    roleFilter() === "Reviewer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                    roleFilter() === "Reviewer" ? "bg-purple-600 text-white font-medium shadow-md shadow-purple-950" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
                   Reviewer
@@ -210,17 +210,17 @@ export default function TaskLogPage() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Task Log Table */}
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr class="text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800 bg-slate-950/40">
-                <th class="py-3 px-4">Date / Time</th>
-                <th class="py-3 px-4">Role & Subrole</th>
-                <th class="py-3 px-4">Task Details</th>
-                <th class="py-3 px-4">Timer Mode</th>
-                <th class="py-3 px-4">Duration</th>
-                <th class="py-3 px-4 text-right">Actions</th>
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+              <tr>
+                <th class="py-3.5 px-4">Logged At</th>
+                <th class="py-3.5 px-4">Role & Subrole</th>
+                <th class="py-3.5 px-4">Task Information</th>
+                <th class="py-3.5 px-4">Tracking Mode</th>
+                <th class="py-3.5 px-4">Duration</th>
+                <th class="py-3.5 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-800/60">
@@ -229,7 +229,7 @@ export default function TaskLogPage() {
                 fallback={
                   <tr>
                     <td colSpan={6} class="py-12 text-center text-slate-500">
-                      No task log entries found matching current filters.
+                      No task log entries found matching the current filters.
                     </td>
                   </tr>
                 }
@@ -237,11 +237,10 @@ export default function TaskLogPage() {
                 <For each={paginatedTasks()}>
                   {(task) => (
                     <tr class="hover:bg-slate-800/40 transition-colors">
-                      <td class="py-3.5 px-4 text-slate-400 whitespace-nowrap font-mono">
-                        {new Date(task.createdAt).toLocaleString([], {
+                      <td class="py-3.5 px-4 whitespace-nowrap text-slate-400 font-mono">
+                        {new Date(task.createdAt).toLocaleString(undefined, {
                           month: "short",
                           day: "numeric",
-                          year: "numeric",
                           hour: "2-digit",
                           minute: "2-digit",
                         })}
@@ -251,8 +250,8 @@ export default function TaskLogPage() {
                         <div class="flex flex-col space-y-1">
                           <span class={`w-max text-[10px] font-bold px-2 py-0.5 rounded border ${
                             task.role === 'Trainer'
-                              ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800'
-                              : 'bg-sky-950/80 text-sky-300 border-sky-800'
+                              ? 'bg-sky-950/80 text-sky-300 border-sky-800'
+                              : 'bg-purple-950/80 text-purple-300 border-purple-800'
                           }`}>
                             {task.role}
                           </span>

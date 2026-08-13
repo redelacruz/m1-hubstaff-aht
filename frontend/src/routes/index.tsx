@@ -1,4 +1,4 @@
-import { createSignal, createEffect, For, Show } from "solid-js";
+import { createSignal, createEffect, For, Show, onCleanup } from "solid-js";
 import {
   Role,
   Subrole,
@@ -9,16 +9,16 @@ import {
   addTaskLog,
   updateTaskLog,
   deleteTaskLog,
-  addHubstaffTime,
   tasks,
   calculateGlobalAHT,
   getAhtStatus,
   formatDuration,
   formatTaskDuration,
   formatMinutesDecimal,
-  activeTimerSeconds,
   getUserAvailableRoles,
   getEffectiveUserRole,
+  calculateHubstaffBilledSecondsFromEvents,
+  parseRoleFromProjectName
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
 
@@ -33,18 +33,43 @@ export default function Home() {
   const [taskNotes, setTaskNotes] = createSignal<string>("");
   const [timerMode, setTimerMode] = createSignal<TimerMode>("hubstaff");
 
+  const [activeBilledInfo, setActiveBilledInfo] = createSignal(calculateHubstaffBilledSecondsFromEvents("All"));
+  const [liveElapsedSeconds, setLiveElapsedSeconds] = createSignal(0);
+
+  createEffect(() => {
+    const info = calculateHubstaffBilledSecondsFromEvents("All");
+    setActiveBilledInfo(info);
+    if (info.activeTimer) {
+      setTimerMode("hubstaff");
+      if (info.activeProjectName) {
+        setSelectedRole(parseRoleFromProjectName(info.activeProjectName));
+      }
+    } else {
+      setTimerMode("untracked");
+      setLiveElapsedSeconds(0);
+    }
+  });
+
+  createEffect(() => {
+    const info = activeBilledInfo();
+    if (info.activeTimer && info.activeStartMs) {
+      const updateTime = () => {
+        setLiveElapsedSeconds(Math.max(0, Math.round((Date.now() - info.activeStartMs!) / 1000)));
+      };
+      updateTime();
+      const interval = setInterval(updateTime, 1000);
+      onCleanup(() => clearInterval(interval));
+    }
+  });
+
   // Keep selected role synced with effective role if single role
   createEffect(() => {
+    if (activeBilledInfo().activeTimer) return;
     const available = getUserAvailableRoles();
     if (available.length === 1 && selectedRole() !== available[0]) {
       setSelectedRole(available[0]);
     }
   });
-
-  // Duration in minutes for testing / override
-  const [customDurationMins, setCustomDurationMins] = createSignal<number>(
-    Math.round(activeTimerSeconds() / 60)
-  );
 
   // Filters & Toast
   const [logFilterRole, setLogFilterRole] = createSignal<Role | "All">("All");
@@ -82,7 +107,7 @@ export default function Home() {
     }
 
     const isUntracked = timerMode() === "untracked";
-    const durationInSeconds = isUntracked ? 0 : Math.max(30, customDurationMins() * 60);
+    const durationInSeconds = isUntracked ? 0 : Math.max(30, liveElapsedSeconds());
 
     addTaskLog({
       role: selectedRole(),
@@ -105,13 +130,6 @@ export default function Home() {
     );
     setShowNotification(true);
     setTimeout(() => setShowNotification(false), 3500);
-  };
-
-  const handleSimulateAdminTime = (mins: number) => {
-    addHubstaffTime(selectedRole(), mins * 60);
-    setNotificationMsg(`Added +${mins}m non-task Hubstaff time for ${selectedRole()}.`);
-    setShowNotification(true);
-    setTimeout(() => setShowNotification(false), 3000);
   };
 
   const openEditModal = (task: TaskLogEntry) => {
@@ -169,14 +187,7 @@ export default function Home() {
       <div class="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-900/40 rounded-2xl p-6 shadow-xl relative overflow-hidden">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div class="flex items-center space-x-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              <span>Hubstaff Source of Truth Standard</span>
-            </div>
             <h1 class="text-2xl font-extrabold text-white tracking-tight">Active Handling Time Tracker</h1>
-            <p class="text-slate-400 text-sm mt-1 max-w-2xl">
-              Global AHT is strictly calculated as <code class="text-sky-300 font-mono font-semibold">Total Hubstaff Hours ÷ Total Tasks</code>. Task durations do not alter Global AHT.
-            </p>
           </div>
           <div class="flex items-center space-x-3 bg-slate-950/80 border border-slate-800 px-4 py-2.5 rounded-xl self-start md:self-auto text-xs">
             <span class="text-slate-400">Selected Role:</span>
@@ -201,62 +212,22 @@ export default function Home() {
             </div>
 
             <form onSubmit={handleTaskSubmit} class="space-y-5">
-              {/* Timer Mode Selection */}
-              <div>
-                <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                  Timer Tracking Mode
-                </label>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <label class={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${timerMode() === 'hubstaff'
-                    ? 'bg-sky-950/60 border-sky-500/80'
-                    : 'bg-slate-950 border-slate-800'
-                    }`}>
-                    <input
-                      type="radio"
-                      name="timerMode"
-                      value="hubstaff"
-                      checked={timerMode() === "hubstaff"}
-                      onChange={() => setTimerMode("hubstaff")}
-                      class="w-4 h-4 text-sky-500 bg-slate-900 border-slate-700"
-                    />
-                    <div class="ml-3 text-xs">
-                      <span class="block font-bold text-white">Hubstaff Active Timer</span>
-                      <span class="block text-slate-400">Logs task with active Hubstaff duration</span>
-                    </div>
-                  </label>
-
-                  <label class={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${timerMode() === 'untracked'
-                    ? 'bg-amber-950/60 border-amber-500/80'
-                    : 'bg-slate-950 border-slate-800'
-                    }`}>
-                    <input
-                      type="radio"
-                      name="timerMode"
-                      value="untracked"
-                      checked={timerMode() === "untracked"}
-                      onChange={() => setTimerMode("untracked")}
-                      class="w-4 h-4 text-amber-500 bg-slate-900 border-slate-700"
-                    />
-                    <div class="ml-3 text-xs">
-                      <span class="block font-bold text-amber-300">Untracked Task (No Hubstaff Timer)</span>
-                      <span class="block text-slate-400">Increments task count; Hubstaff time +0</span>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
               {/* Role & Subrole Row */}
               <div class={getUserAvailableRoles().length > 1 ? "grid grid-cols-1 sm:grid-cols-2 gap-5" : "grid grid-cols-1 gap-5"}>
                 <Show when={getUserAvailableRoles().length > 1}>
                   <div>
-                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                      Role <span class="text-rose-400">*</span>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
+                      <span>Role <span class="text-rose-400">*</span></span>
+                      <Show when={activeBilledInfo().activeTimer}>
+                        <span class="text-[9px] bg-sky-900/50 text-sky-400 px-1.5 py-0.5 rounded border border-sky-800/50">Locked to Timer</span>
+                      </Show>
                     </label>
                     <div class="relative">
                       <select
                         value={selectedRole()}
+                        disabled={activeBilledInfo().activeTimer}
                         onChange={(e) => setSelectedRole(e.currentTarget.value as Role)}
-                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none"
+                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none disabled:opacity-50"
                       >
                         <For each={getUserAvailableRoles()}>
                           {(role) => <option value={role}>{role}</option>}
@@ -361,7 +332,11 @@ export default function Home() {
           <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
             <div class="flex items-center justify-between mb-3">
               <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
-                <span class="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span
+                  class={`w-2.5 h-2.5 rounded-full animate-pulse ${
+                    timerMode() === "untracked" ? "bg-amber-400" : "bg-emerald-400"
+                  }`}
+                ></span>
                 <span>Active Task Timer</span>
               </span>
               <span class="text-[11px] text-sky-400 bg-sky-950 border border-sky-900 px-2 py-0.5 rounded font-mono">
@@ -370,30 +345,28 @@ export default function Home() {
             </div>
 
             <div class="text-center py-4 bg-slate-950 rounded-xl border border-slate-800 my-2">
-              <div class="text-4xl font-mono font-extrabold text-white tracking-wider">
-                {timerMode() === "untracked" ? "00:00" : formatTaskDuration(customDurationMins() * 60)}
+              <div
+                class={`text-4xl font-mono font-extrabold tracking-wider ${
+                  timerMode() === "untracked" ? "text-amber-400" : "text-emerald-400"
+                }`}
+              >
+                {timerMode() === "untracked" ? "00:00" : formatTaskDuration(liveElapsedSeconds())}
               </div>
-              <p class="text-xs text-slate-400 mt-2">
-                {timerMode() === "untracked" ? "Untracked Task Mode (Hubstaff Timer Off)" : "Accumulated Time for Active Task"}
-              </p>
+              <div class="text-xs mt-2 space-y-0.5">
+                <Show
+                  when={timerMode() === "hubstaff"}
+                  fallback={
+                    <>
+                      <span class="block font-bold text-amber-300">Untracked Task (No Hubstaff Timer)</span>
+                      <span class="block text-slate-400">Submissions increment task count; Hubstaff time +0</span>
+                    </>
+                  }
+                >
+                  <span class="block font-bold text-emerald-400">Tracked Task (Hubstaff Timer Running)</span>
+                  <span class="block text-slate-400">Submissions increment task count; billing Hubstaff time as normal</span>
+                </Show>
+              </div>
             </div>
-
-            <Show when={timerMode() === "hubstaff"}>
-              <div class="mt-4 pt-3 border-t border-slate-800">
-                <div class="flex justify-between items-center text-xs text-slate-400 mb-1">
-                  <span>Simulated Task Duration:</span>
-                  <span class="font-bold text-sky-300 font-mono">{customDurationMins()} minutes</span>
-                </div>
-                <input
-                  type="range"
-                  min="1"
-                  max="45"
-                  value={customDurationMins()}
-                  onInput={(e) => setCustomDurationMins(parseInt(e.currentTarget.value))}
-                  class="w-full accent-sky-500 cursor-pointer"
-                />
-              </div>
-            </Show>
           </div>
 
           {/* Current Global AHT Status Card */}
@@ -425,26 +398,6 @@ export default function Home() {
                 <span>Submitted Tasks:</span>
                 <span class="font-mono font-bold text-slate-200">{currentGlobalAHT().taskCount} tasks</span>
               </div>
-            </div>
-
-            {/* Non-Task Work Simulation Control */}
-            <div class="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2 text-xs">
-              <div class="text-slate-400 flex items-center justify-between">
-                <span>Non-Task Work Simulation:</span>
-                <span class="text-amber-400 font-bold font-mono">
-                  {formatDuration(currentGlobalAHT().nonTaskSeconds)}
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => handleSimulateAdminTime(15)}
-                class="w-full py-1.5 bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-medium rounded-lg transition-colors flex items-center justify-center space-x-1"
-              >
-                <svg class="w-3.5 h-3.5 text-amber-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <span>Add +15m Non-Task Hubstaff Time</span>
-              </button>
             </div>
 
             {/* Threshold Benchmarks */}
@@ -520,7 +473,7 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => setLogFilterRole("Reviewer")}
-                  class={`px-2.5 py-0.5 rounded transition-all ${logFilterRole() === "Reviewer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                  class={`px-2.5 py-0.5 rounded transition-all ${logFilterRole() === "Reviewer" ? "bg-purple-600 text-white font-medium shadow-md shadow-purple-950" : "text-slate-400 hover:text-slate-200"
                     }`}
                 >
                   Reviewer
@@ -569,8 +522,8 @@ export default function Home() {
                       <td class="py-3 px-4 whitespace-nowrap">
                         <div class="flex flex-col space-y-1">
                           <span class={`w-max text-[10px] font-bold px-2 py-0.5 rounded border ${task.role === 'Trainer'
-                            ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800'
-                            : 'bg-sky-950/80 text-sky-300 border-sky-800'
+                            ? 'bg-sky-950/80 text-sky-300 border-sky-800'
+                            : 'bg-purple-950/80 text-purple-300 border-purple-800'
                             }`}>
                             {task.role}
                           </span>

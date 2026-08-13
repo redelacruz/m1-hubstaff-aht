@@ -4,8 +4,8 @@ import {
   Subrole,
   SUBROLES_BY_ROLE,
   getEffectiveUserRole,
-  parsePastedTimestamp,
 } from "../lib/store";
+import { TaskTimingFields } from "./TaskTimingFields";
 
 interface AddManualTaskModalProps {
   isOpen: boolean;
@@ -36,8 +36,6 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
   const [timingMode, setTimingMode] = createSignal<"timestamps" | "duration">("timestamps");
   const [startTime, setStartTime] = createSignal<string>("");
   const [endTime, setEndTime] = createSignal<string>("");
-  
-  // Date & Duration Mode now uses Start Date & Time
   const [startDateTime, setStartDateTime] = createSignal<string>("");
   const [durationMins, setDurationMins] = createSignal<number>(15);
 
@@ -71,17 +69,6 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
       setSubrole(availableSubroles[0]);
     }
   });
-
-  const handlePasteTimestamp = (e: ClipboardEvent, setter: (val: string) => void) => {
-    const pastedText = e.clipboardData?.getData("text");
-    if (pastedText) {
-      const parsed = parsePastedTimestamp(pastedText);
-      if (parsed) {
-        e.preventDefault();
-        setter(parsed);
-      }
-    }
-  };
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
@@ -231,101 +218,20 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
               </div>
             </div>
 
-            {/* Timing Mode Toggle */}
-            <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-3">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold uppercase tracking-wider text-slate-300">
-                  Task Timing Specification
-                </span>
-                <div class="flex items-center space-x-1 text-xs">
-                  <button
-                    type="button"
-                    onClick={() => setTimingMode("timestamps")}
-                    class={`px-3 py-1 rounded-lg transition-all ${
-                      timingMode() === "timestamps"
-                        ? "bg-sky-600 text-white font-medium"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Start & End Time
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setTimingMode("duration")}
-                    class={`px-3 py-1 rounded-lg transition-all ${
-                      timingMode() === "duration"
-                        ? "bg-sky-600 text-white font-medium"
-                        : "text-slate-400 hover:text-slate-200"
-                    }`}
-                  >
-                    Start Date/Time & Duration
-                  </button>
-                </div>
-              </div>
-
-              <Show
-                when={timingMode() === "timestamps"}
-                fallback={
-                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div>
-                      <label class="block text-xs text-slate-400 mb-1">
-                        Start Date & Time (Paste supported)
-                      </label>
-                      <input
-                        type="datetime-local"
-                        value={startDateTime()}
-                        onClick={(e) => e.currentTarget.showPicker?.()}
-                        onPaste={(e) => handlePasteTimestamp(e, setStartDateTime)}
-                        onInput={(e) => setStartDateTime(e.currentTarget.value)}
-                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
-                      />
-                    </div>
-                    <div>
-                      <label class="block text-xs text-slate-400 mb-1">
-                        Elapsed Duration (Minutes)
-                      </label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="480"
-                        value={durationMins()}
-                        onInput={(e) => setDurationMins(parseInt(e.currentTarget.value) || 1)}
-                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-mono"
-                      />
-                    </div>
-                  </div>
-                }
-              >
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label class="block text-xs text-slate-400 mb-1">
-                      Start Time (Paste supported)
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={startTime()}
-                      onClick={(e) => e.currentTarget.showPicker?.()}
-                      onPaste={(e) => handlePasteTimestamp(e, setStartTime)}
-                      onInput={(e) => setStartTime(e.currentTarget.value)}
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
-                    />
-                  </div>
-                  <div>
-                    <label class="block text-xs text-slate-400 mb-1">
-                      End Time (Paste supported)
-                    </label>
-                    <input
-                      type="datetime-local"
-                      value={endTime()}
-                      onClick={(e) => e.currentTarget.showPicker?.()}
-                      onPaste={(e) => handlePasteTimestamp(e, setEndTime)}
-                      onInput={(e) => setEndTime(e.currentTarget.value)}
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
-                    />
-                  </div>
-                </div>
-              </Show>
-            </div>
+            {/* Reusable Task Timing Fields Card */}
+            <TaskTimingFields
+              title="Task Timing Specification"
+              timingMode={timingMode()}
+              onTimingModeChange={setTimingMode}
+              startTime={startTime()}
+              onStartTimeChange={setStartTime}
+              endTime={endTime()}
+              onEndTimeChange={setEndTime}
+              startDateTime={startDateTime()}
+              onStartDateTimeChange={setStartDateTime}
+              durationMins={durationMins()}
+              onDurationMinsChange={setDurationMins}
+            />
 
             {/* Reconciliation Strategy Option */}
             <div class="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">

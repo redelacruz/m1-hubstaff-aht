@@ -1,4 +1,4 @@
-import { createSignal, createEffect, For, Show } from "solid-js";
+import { createSignal, createEffect, For, Show, onMount, onCleanup } from "solid-js";
 import {
   Role,
   Subrole,
@@ -11,10 +11,20 @@ import {
   tasks,
   getUserAvailableRoles,
   getEffectiveUserRole,
+  fetchLocalHubstaffEvents,
+  calculateHubstaffBilledSecondsFromEvents,
 } from "../lib/store";
 
 export default function Analytics() {
   const [selectedRole, setSelectedRole] = createSignal<Role | "All">(getEffectiveUserRole());
+
+  onMount(() => {
+    fetchLocalHubstaffEvents();
+    const interval = setInterval(() => {
+      fetchLocalHubstaffEvents();
+    }, 5000);
+    onCleanup(() => clearInterval(interval));
+  });
 
   createEffect(() => {
     const available = getUserAvailableRoles();
@@ -24,6 +34,7 @@ export default function Analytics() {
   });
 
   const currentGlobalAHT = () => calculateGlobalAHT(selectedRole());
+  const currentBilledInfo = () => calculateHubstaffBilledSecondsFromEvents(selectedRole());
 
   const getEffectiveThresholds = () => {
     const role = selectedRole();
@@ -132,9 +143,19 @@ export default function Analytics() {
               <span class="text-xs font-bold uppercase tracking-wider text-slate-400">
                 Total Hubstaff Billed Time
               </span>
-              <span class="text-[10px] bg-emerald-950 border border-emerald-800 text-emerald-300 px-2 py-0.5 rounded font-semibold">
-                Source of Truth
-              </span>
+              <Show
+                when={currentBilledInfo().activeTimer}
+                fallback={
+                  <span class="text-[10px] bg-emerald-950 border border-emerald-800 text-emerald-300 px-2 py-0.5 rounded font-semibold">
+                    Events Direct
+                  </span>
+                }
+              >
+                <span class="text-[10px] bg-emerald-950 border border-emerald-700 text-emerald-300 px-2 py-0.5 rounded font-bold flex items-center space-x-1">
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span>Timer Active</span>
+                </span>
+              </Show>
             </div>
 
             <div class="my-3">
@@ -160,7 +181,7 @@ export default function Analytics() {
 
           <div class="mt-4 text-xs text-slate-500 flex justify-between items-center">
             <span>Billed Client Time:</span>
-            <span class="font-bold text-slate-300">100% Hubstaff Tracked</span>
+            <span class="font-bold text-slate-300">Dynamic Events Paired</span>
           </div>
         </div>
 

@@ -540,16 +540,97 @@ export const getFilteredTasks = (
   });
 };
 
+export const getEventRole = (evt: HubstaffEvent): Role => {
+  const name = (evt.projectName || "").toLowerCase();
+  if (name.includes("trainer") || name.includes("training")) {
+    return "Trainer";
+  }
+  if (name.includes("reviewer") || name.includes("review") || name.includes("qa")) {
+    return "Reviewer";
+  }
+  return settings.defaultRole || "Reviewer";
+};
+
+export interface HubstaffBilledCalculation {
+  totalSeconds: number;
+  activeTimer: boolean;
+  activeProjectName?: string;
+  activeStartMs?: number;
+}
+
+export const calculateHubstaffBilledSecondsFromEvents = (
+  roleFilter: Role | "All"
+): HubstaffBilledCalculation => {
+  const events = hubstaffEvents || [];
+  const filteredEvents = events.filter((evt) => {
+    if (roleFilter === "All") return true;
+    return getEventRole(evt) === roleFilter;
+  });
+
+  if (filteredEvents.length === 0) {
+    return { totalSeconds: 0, activeTimer: false };
+  }
+
+  // Sort events chronologically (oldest first)
+  const sortedEvents = [...filteredEvents].sort((a, b) => {
+    const timeA = new Date(a.eventTime).getTime();
+    const timeB = new Date(b.eventTime).getTime();
+    if (timeA !== timeB) return timeA - timeB;
+    const aIsStop = a.eventName.toLowerCase().includes("stop");
+    const bIsStop = b.eventName.toLowerCase().includes("stop");
+    if (aIsStop !== bIsStop) return aIsStop ? 1 : -1;
+    return a.id.localeCompare(b.id);
+  });
+
+  let totalSeconds = 0;
+  let activeStartMs: number | null = null;
+  let activeProjectName: string | undefined = undefined;
+
+  for (const evt of sortedEvents) {
+    const isStart = evt.eventName.toLowerCase().includes("start");
+    const isStop = evt.eventName.toLowerCase().includes("stop");
+    const evtMs = new Date(evt.eventTime).getTime();
+
+    if (isStart) {
+      if (activeStartMs !== null) {
+        const deltaSecs = Math.max(0, Math.round((evtMs - activeStartMs) / 1000));
+        totalSeconds += deltaSecs;
+      }
+      activeStartMs = evtMs;
+      activeProjectName = evt.projectName;
+    } else if (isStop) {
+      if (activeStartMs !== null) {
+        const deltaSecs = Math.max(0, Math.round((evtMs - activeStartMs) / 1000));
+        totalSeconds += deltaSecs;
+        activeStartMs = null;
+        activeProjectName = undefined;
+      }
+    }
+  }
+
+  let activeTimer = false;
+  if (activeStartMs !== null) {
+    activeTimer = true;
+    const nowMs = Date.now();
+    if (nowMs > activeStartMs) {
+      totalSeconds += Math.max(0, Math.round((nowMs - activeStartMs) / 1000));
+    }
+  }
+
+  return {
+    totalSeconds,
+    activeTimer,
+    activeProjectName,
+    activeStartMs: activeStartMs || undefined,
+  };
+};
+
 export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown => {
   const filteredTasks = getFilteredTasks(roleFilter, "global");
   const taskCount = filteredTasks.length;
 
-  let totalHubstaffSeconds = 0;
-  if (roleFilter === "All") {
-    totalHubstaffSeconds = hubstaffTime.Trainer + hubstaffTime.Reviewer;
-  } else {
-    totalHubstaffSeconds = hubstaffTime[roleFilter];
-  }
+  const billedCalc = calculateHubstaffBilledSecondsFromEvents(roleFilter);
+  const totalHubstaffSeconds = billedCalc.totalSeconds;
 
   const totalDirectTaskSeconds = filteredTasks.reduce(
     (sum: number, t: TaskLogEntry) => sum + (t.durationSeconds || 0),

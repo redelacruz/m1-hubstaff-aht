@@ -120,7 +120,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
                   type="button"
                   onClick={() => startDateTimeInputRef?.showPicker?.()}
                   class="absolute right-2.5 text-slate-400 hover:text-white p-1 transition-colors"
-                  title="Open Calendar Picker"
+                  title="Open calendar picker"
                 >
                   <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -173,7 +173,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
                 type="button"
                 onClick={() => startTimeInputRef?.showPicker?.()}
                 class="absolute right-2.5 text-slate-400 hover:text-white p-1 transition-colors"
-                title="Open Calendar Picker"
+                title="Open calendar picker"
               >
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -208,7 +208,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
                 type="button"
                 onClick={() => endTimeInputRef?.showPicker?.()}
                 class="absolute right-2.5 text-slate-400 hover:text-white p-1 transition-colors"
-                title="Open Calendar Picker"
+                title="Open calendar picker"
               >
                 <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />

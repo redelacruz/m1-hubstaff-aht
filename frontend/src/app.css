@@ -9,12 +9,16 @@ body {
   color: #f1f5f9;
 }
 
-input[type="date"] {
+input[type="date"],
+input[type="datetime-local"],
+input[type="time"] {
   color-scheme: dark;
 }
 
-input[type="date"]::-webkit-calendar-picker-indicator {
-  cursor: pointer;
-  filter: invert(1);
-  opacity: 0.9;
+/* Hide default browser calendar picker indicators so we use our standardized custom icon button */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="datetime-local"]::-webkit-calendar-picker-indicator,
+input[type="time"]::-webkit-calendar-picker-indicator {
+  display: none !important;
+  -webkit-appearance: none;
 }

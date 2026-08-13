@@ -8,6 +8,9 @@ import {
 } from "../lib/store";
 
 export default function HubstaffDataPage() {
+  let startDateInputRef: HTMLInputElement | undefined;
+  let endDateInputRef: HTMLInputElement | undefined;
+
   const [currentPage, setCurrentPage] = createSignal<number>(1);
   const [pageSize, setPageSize] = createSignal<number>(settings.hubstaffPageSize || 25);
   const [toastMsg, setToastMsg] = createSignal<string>("");
@@ -223,29 +226,55 @@ export default function HubstaffDataPage() {
             {/* Start Date */}
             <div>
               <label class="block text-[11px] font-medium text-slate-400 mb-1">Start Date</label>
-              <input
-                type="date"
-                value={startDateFilter()}
-                onInput={(e) => {
-                  setStartDateFilter(e.currentTarget.value);
-                  setCurrentPage(1);
-                }}
-                class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              />
+              <div class="relative flex items-center">
+                <input
+                  ref={(el) => (startDateInputRef = el)}
+                  type="date"
+                  value={startDateFilter()}
+                  onInput={(e) => {
+                    setStartDateFilter(e.currentTarget.value);
+                    setCurrentPage(1);
+                  }}
+                  class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg pl-3 pr-8 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => startDateInputRef?.showPicker?.()}
+                  class="absolute right-2 text-slate-400 hover:text-white p-1 transition-colors"
+                  title="Open calendar picker"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* End Date */}
             <div>
               <label class="block text-[11px] font-medium text-slate-400 mb-1">End Date</label>
-              <input
-                type="date"
-                value={endDateFilter()}
-                onInput={(e) => {
-                  setEndDateFilter(e.currentTarget.value);
-                  setCurrentPage(1);
-                }}
-                class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
-              />
+              <div class="relative flex items-center">
+                <input
+                  ref={(el) => (endDateInputRef = el)}
+                  type="date"
+                  value={endDateFilter()}
+                  onInput={(e) => {
+                    setEndDateFilter(e.currentTarget.value);
+                    setCurrentPage(1);
+                  }}
+                  class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg pl-3 pr-8 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => endDateInputRef?.showPicker?.()}
+                  class="absolute right-2 text-slate-400 hover:text-white p-1 transition-colors"
+                  title="Open calendar picker"
+                >
+                  <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                </button>
+              </div>
             </div>
 
             {/* Event Name Filter */}

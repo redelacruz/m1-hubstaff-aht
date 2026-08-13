@@ -718,6 +718,7 @@ export default function Settings() {
 
               <div
                 onClick={() => dateInputRef?.showPicker()}
+                title="Open calendar picker"
                 class="relative w-full bg-slate-950 border border-slate-700 hover:border-slate-600 rounded-xl px-4 py-2.5 flex items-center justify-between cursor-pointer transition-all focus-within:ring-2 focus-within:ring-sky-500 group shadow-sm"
               >
                 <span class="text-slate-100 text-sm font-semibold tracking-wide">

@@ -1,4 +1,4 @@
-import { createSignal, createEffect, For, Show, onCleanup } from "solid-js";
+import { createSignal, createEffect, createMemo, onMount, For, Show, onCleanup } from "solid-js";
 import {
   Role,
   Subrole,
@@ -18,11 +18,21 @@ import {
   getUserAvailableRoles,
   getEffectiveUserRole,
   calculateHubstaffBilledSecondsFromEvents,
-  parseRoleFromProjectName
+  parseRoleFromProjectName,
+  fetchLocalHubstaffEvents
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
 
 export default function Home() {
+  // Poll local Hubstaff events every 3 seconds for real-time timer updates
+  onMount(() => {
+    fetchLocalHubstaffEvents();
+    const interval = setInterval(() => {
+      fetchLocalHubstaffEvents();
+    }, 3000);
+    onCleanup(() => clearInterval(interval));
+  });
+
   // Form signals
   const [selectedRole, setSelectedRole] = createSignal<Role>(getEffectiveUserRole());
   const [selectedSubrole, setSelectedSubrole] = createSignal<Subrole>(
@@ -33,12 +43,11 @@ export default function Home() {
   const [taskNotes, setTaskNotes] = createSignal<string>("");
   const [timerMode, setTimerMode] = createSignal<TimerMode>("hubstaff");
 
-  const [activeBilledInfo, setActiveBilledInfo] = createSignal(calculateHubstaffBilledSecondsFromEvents("All"));
+  const activeBilledInfo = createMemo(() => calculateHubstaffBilledSecondsFromEvents("All"));
   const [liveElapsedSeconds, setLiveElapsedSeconds] = createSignal(0);
 
   createEffect(() => {
-    const info = calculateHubstaffBilledSecondsFromEvents("All");
-    setActiveBilledInfo(info);
+    const info = activeBilledInfo();
     if (info.activeTimer) {
       setTimerMode("hubstaff");
       if (info.activeProjectName) {

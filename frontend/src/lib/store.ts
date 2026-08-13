@@ -881,6 +881,7 @@ export const calculateHubstaffBilledSecondsFromEvents = (
   roleFilter: Role | "All"
 ): HubstaffBilledCalculation => {
   const events = hubstaffEvents || [];
+  events.length; // Ensure SolidJS store reactivity tracking
   const filteredEvents = events.filter((evt) => {
     if (roleFilter === "All") return true;
     return getEventRole(evt) === roleFilter;
@@ -889,6 +890,7 @@ export const calculateHubstaffBilledSecondsFromEvents = (
   // Calculate net time adjustments for role
   let netAdjustmentSeconds = 0;
   const adjs = timeAdjustments || [];
+  adjs.length; // Ensure SolidJS store reactivity tracking
   for (const adj of adjs) {
     if (roleFilter === "All" || adj.role === roleFilter) {
       if (adj.adjustmentType === "addition") {

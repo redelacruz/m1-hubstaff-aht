@@ -13,4 +13,4 @@
 When the user specifies multiple changes should be batched together, create one commit per change in the batch. After all changes have been committed, run the build command **once** at the end to compile all changes.
 
 ## Date and Time Input Fields
-- All date and time input elements (`type="date"`, `type="datetime-local"`, etc.) MUST be configured to open the native calendar/time picker when clicked anywhere inside the field bounds. Use `onClick={(e) => e.currentTarget.showPicker?.()}` on all date/time input elements.
+- All date and time input elements (`type="date"`, `type="datetime-local"`, etc.) MUST feature a dedicated calendar icon button calling `showPicker()` to trigger the visual picker popover, while keeping the text input focusable for native keyboard typing and clipboard paste (`Ctrl+V` / `onPaste` / `📋 Paste` button).

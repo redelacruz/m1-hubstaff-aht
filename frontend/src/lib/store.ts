@@ -957,7 +957,7 @@ export const toLocalDateTimeLocalString = (d: Date): string => {
 
 export const parsePastedTimestamp = (rawInput: string, currentValue?: string): string | null => {
   if (!rawInput || !rawInput.trim()) return null;
-  const str = rawInput.trim();
+  let str = rawInput.trim().replace(/^["'\[\(]+|["'\]\)]+$/g, '');
 
   // Handle Unix timestamp (numeric digits)
   if (/^\d{9,13}$/.test(str)) {
@@ -979,6 +979,28 @@ export const parsePastedTimestamp = (rawInput: string, currentValue?: string): s
   d = new Date(normalized);
   if (!isNaN(d.getTime())) {
     return toLocalDateTimeLocalString(d);
+  }
+
+  // Handle explicit HH:MM or HH:MM:SS with optional AM/PM (e.g., "14:30", "2:30 PM", "09:15:00 am")
+  const timeRegex = /^([0-1]?\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?\s*(am|pm)?$/i;
+  const match = str.match(timeRegex);
+  if (match) {
+    let hours = parseInt(match[1], 10);
+    const minutes = parseInt(match[2], 10);
+    const ampm = match[4]?.toLowerCase();
+
+    if (ampm === "pm" && hours < 12) hours += 12;
+    if (ampm === "am" && hours === 12) hours = 0;
+
+    let baseDate = new Date();
+    if (currentValue) {
+      const cvDate = new Date(currentValue);
+      if (!isNaN(cvDate.getTime())) {
+        baseDate = cvDate;
+      }
+    }
+    baseDate.setHours(hours, minutes, 0, 0);
+    return toLocalDateTimeLocalString(baseDate);
   }
 
   // Try time-only parsing

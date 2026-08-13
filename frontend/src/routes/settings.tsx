@@ -568,7 +568,7 @@ export default function Settings() {
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
               <label
                 class={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${defaultRole() === "Trainer"
-                    ? "bg-indigo-950/60 border-indigo-500/80 shadow-md shadow-indigo-950"
+                    ? "bg-sky-950/60 border-sky-500/80 shadow-md shadow-sky-950"
                     : "bg-slate-950 border-slate-800 hover:border-slate-700"
                   }`}
               >
@@ -578,7 +578,7 @@ export default function Settings() {
                   value="Trainer"
                   checked={defaultRole() === "Trainer"}
                   onChange={() => setDefaultRole("Trainer")}
-                  class="w-4 h-4 text-indigo-500 focus:ring-indigo-500 bg-slate-900 border-slate-700"
+                  class="w-4 h-4 text-sky-500 focus:ring-sky-500 bg-slate-900 border-slate-700"
                 />
                 <div class="ml-3">
                   <span class="block text-sm font-bold text-white">Trainer</span>
@@ -590,7 +590,7 @@ export default function Settings() {
 
               <label
                 class={`flex items-center p-4 rounded-xl border cursor-pointer transition-all ${defaultRole() === "Reviewer"
-                    ? "bg-sky-950/60 border-sky-500/80 shadow-md shadow-sky-950"
+                    ? "bg-purple-950/60 border-purple-500/80 shadow-md shadow-purple-950"
                     : "bg-slate-950 border-slate-800 hover:border-slate-700"
                   }`}
               >
@@ -600,7 +600,7 @@ export default function Settings() {
                   value="Reviewer"
                   checked={defaultRole() === "Reviewer"}
                   onChange={() => setDefaultRole("Reviewer")}
-                  class="w-4 h-4 text-sky-500 focus:ring-sky-500 bg-slate-900 border-slate-700"
+                  class="w-4 h-4 text-purple-500 focus:ring-purple-500 bg-slate-900 border-slate-700"
                 />
                 <div class="ml-3">
                   <span class="block text-sm font-bold text-white">Reviewer</span>
@@ -631,7 +631,7 @@ export default function Settings() {
             <Show when={getUserAvailableRoles().includes("Trainer")}>
               <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
                 <div class="flex items-center space-x-2">
-                  <span class="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
+                  <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
                   <h3 class="font-bold text-white text-sm">Trainer Role Benchmarks</h3>
                 </div>
 
@@ -685,7 +685,7 @@ export default function Settings() {
             <Show when={getUserAvailableRoles().includes("Reviewer")}>
               <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
                 <div class="flex items-center space-x-2">
-                  <span class="w-2.5 h-2.5 rounded-full bg-sky-400"></span>
+                  <span class="w-2.5 h-2.5 rounded-full bg-purple-400"></span>
                   <h3 class="font-bold text-white text-sm">Reviewer Role Benchmarks</h3>
                 </div>
 

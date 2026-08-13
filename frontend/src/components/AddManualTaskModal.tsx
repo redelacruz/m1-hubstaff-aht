@@ -71,6 +71,14 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
     }
   });
 
+  createEffect(() => {
+    if (isUntracked()) {
+      setTimingMode("duration");
+      setDurationMins(0);
+      setDurationSecs(0);
+    }
+  });
+
   const handleSubmit = (e: Event) => {
     e.preventDefault();
     if (!title().trim()) {
@@ -78,7 +86,30 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
       return;
     }
 
-    if (timingMode() === "timestamps") {
+    if (isUntracked()) {
+      let startIso: string | undefined = undefined;
+      if (startDateTime()) {
+        const startDt = new Date(startDateTime());
+        if (!isNaN(startDt.getTime())) {
+          startIso = startDt.toISOString();
+        }
+      }
+      if (!startIso) {
+        startIso = new Date().toISOString();
+      }
+
+      props.onAdd({
+        role: role(),
+        subrole: subrole(),
+        title: title().trim(),
+        url: url().trim(),
+        notes: notes().trim(),
+        startTime: startIso,
+        endTime: startIso,
+        durationMinutes: 0,
+        isUntracked: true,
+      });
+    } else if (timingMode() === "timestamps") {
       if (!startTime() || !endTime()) {
         alert("Please specify both Start Time and End Time.");
         return;
@@ -96,7 +127,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
         notes: notes().trim(),
         startTime: new Date(startTime()).toISOString(),
         endTime: new Date(endTime()).toISOString(),
-        isUntracked: isUntracked(),
+        isUntracked: false,
       });
     } else {
       // Start Date/Time & Duration Mode
@@ -122,7 +153,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
         startTime: startIso,
         endTime: endIso,
         durationMinutes: durationMins() + durationSecs() / 60,
-        isUntracked: isUntracked(),
+        isUntracked: false,
       });
     }
 
@@ -235,6 +266,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
               onDurationMinsChange={setDurationMins}
               durationSecs={durationSecs()}
               onDurationSecsChange={setDurationSecs}
+              isUntracked={isUntracked()}
             />
 
             {/* Reconciliation Strategy Option */}

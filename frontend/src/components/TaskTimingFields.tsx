@@ -23,12 +23,15 @@ export interface TaskTimingFieldsProps {
   timerMode?: "hubstaff" | "untracked";
   onTimerModeChange?: (mode: "hubstaff" | "untracked") => void;
   showUntrackedOption?: boolean;
+  isUntracked?: boolean;
 }
 
 export function TaskTimingFields(props: TaskTimingFieldsProps) {
   let startDateTimeInputRef: HTMLInputElement | undefined;
   let startTimeInputRef: HTMLInputElement | undefined;
   let endTimeInputRef: HTMLInputElement | undefined;
+
+  const isUntrackedActive = () => props.isUntracked || props.timerMode === "untracked";
 
   const handlePasteTimestamp = (e: ClipboardEvent, currentValue: string, setter: (val: string) => void) => {
     const pastedText = e.clipboardData?.getData("text") || e.clipboardData?.getData("text/plain");
@@ -68,21 +71,23 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
         <div class="flex items-center space-x-1 text-xs">
           <button
             type="button"
+            disabled={isUntrackedActive()}
             onClick={() => props.onTimingModeChange("timestamps")}
-            class={`px-3 py-1 rounded-lg transition-all ${props.timingMode === "timestamps"
+            class={`px-3 py-1 rounded-lg transition-all ${props.timingMode === "timestamps" && !isUntrackedActive()
               ? "bg-sky-600 text-white font-medium"
               : "text-slate-400 hover:text-slate-200"
-              }`}
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             Start & End Time
           </button>
           <button
             type="button"
+            disabled={isUntrackedActive()}
             onClick={() => props.onTimingModeChange("duration")}
-            class={`px-3 py-1 rounded-lg transition-all ${props.timingMode === "duration"
+            class={`px-3 py-1 rounded-lg transition-all ${(props.timingMode === "duration" || isUntrackedActive())
               ? "bg-sky-600 text-white font-medium"
               : "text-slate-400 hover:text-slate-200"
-              }`}
+              } disabled:opacity-40 disabled:cursor-not-allowed`}
           >
             Duration
           </button>
@@ -90,7 +95,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
       </div>
 
       <Show
-        when={props.timingMode === "timestamps"}
+        when={props.timingMode === "timestamps" && !isUntrackedActive()}
         fallback={
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -139,8 +144,8 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
                     type="number"
                     min="0"
                     max="480"
-                    disabled={props.timerMode === "untracked"}
-                    value={props.durationMins}
+                    disabled={isUntrackedActive()}
+                    value={isUntrackedActive() ? 0 : props.durationMins}
                     onInput={(e) => props.onDurationMinsChange(Math.max(0, parseInt(e.currentTarget.value) || 0))}
                     class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-3 pr-7 py-2 text-xs text-white font-mono text-center disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-sky-500"
                     placeholder="00"
@@ -153,8 +158,8 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
                     type="number"
                     min="0"
                     max="59"
-                    disabled={props.timerMode === "untracked"}
-                    value={props.durationSecs ?? 0}
+                    disabled={isUntrackedActive()}
+                    value={isUntrackedActive() ? 0 : (props.durationSecs ?? 0)}
                     onInput={(e) => props.onDurationSecsChange ? props.onDurationSecsChange(Math.min(59, Math.max(0, parseInt(e.currentTarget.value) || 0))) : null}
                     class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-3 pr-7 py-2 text-xs text-white font-mono text-center disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-sky-500"
                     placeholder="00"

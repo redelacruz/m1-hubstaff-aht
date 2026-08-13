@@ -264,8 +264,8 @@ export default function Analytics() {
                       <div>
                         <div class="flex items-center justify-between mb-2">
                           <span class={`text-[10px] font-bold px-2 py-0.5 rounded border ${parentRole === 'Trainer'
-                              ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800'
-                              : 'bg-sky-950/80 text-sky-300 border-sky-800'
+                              ? 'bg-sky-950/80 text-sky-300 border-sky-800'
+                              : 'bg-purple-950/80 text-purple-300 border-purple-800'
                             }`}>
                             {parentRole}
                           </span>

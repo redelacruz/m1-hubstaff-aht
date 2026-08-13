@@ -53,6 +53,12 @@ export function EditTaskModal(props: EditTaskModalProps) {
       const totalSecs = props.task.durationSeconds || 0;
       setDurationMins(Math.floor(totalSecs / 60));
       setDurationSecs(totalSecs % 60);
+
+      if (props.task.timerMode === "untracked") {
+        setTimingMode("duration");
+        setDurationMins(0);
+        setDurationSecs(0);
+      }
     }
   });
 
@@ -61,6 +67,14 @@ export function EditTaskModal(props: EditTaskModalProps) {
     const availableSubroles = SUBROLES_BY_ROLE[currentRole];
     if (!availableSubroles.includes(subrole())) {
       setSubrole(availableSubroles[0]);
+    }
+  });
+
+  createEffect(() => {
+    if (timerMode() === "untracked") {
+      setTimingMode("duration");
+      setDurationMins(0);
+      setDurationSecs(0);
     }
   });
 
@@ -86,6 +100,12 @@ export function EditTaskModal(props: EditTaskModalProps) {
 
       if (timerMode() === "untracked") {
         updatedFields.durationSeconds = 0;
+        if (startDateTime()) {
+          const startDt = new Date(startDateTime());
+          if (!isNaN(startDt.getTime())) {
+            updatedFields.createdAt = startDt.toISOString();
+          }
+        }
       } else if (timingMode() === "timestamps") {
         if (startTime() && endTime()) {
           const startMs = new Date(startTime()).getTime();
@@ -198,6 +218,7 @@ export function EditTaskModal(props: EditTaskModalProps) {
                 timerMode={timerMode()}
                 onTimerModeChange={setTimerMode}
                 showUntrackedOption={true}
+                isUntracked={timerMode() === "untracked"}
               />
             </Show>
 

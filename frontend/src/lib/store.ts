@@ -851,7 +851,7 @@ export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown
     0
   );
 
-  const nonTaskSeconds = Math.max(0, totalHubstaffSeconds - totalDirectTaskSeconds);
+  const nonTaskSeconds = Math.max(0, totalHubstaffSeconds - totalDirectTaskSeconds - onboardingSeconds);
 
   if (taskCount === 0) {
     return {

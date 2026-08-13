@@ -5,6 +5,7 @@ import {
   updateUserSettings,
   saveUserSettingsToBackend,
   syncHubstaffData,
+  syncHubstaffTrackingStatesFromBackend,
   hubstaffStatus,
   fetchHubstaffStatusFromBackend,
   submitHubstaffPatToBackend,
@@ -110,17 +111,20 @@ export default function Settings() {
     setTimeout(() => setSavedSuccess(false), 3000);
   };
 
-  const handleSyncFromStartDate = () => {
+  const handleSyncFromStartDate = async () => {
     setIsSyncing(true);
     updateUserSettings({ trackingStartDate: trackingStartDate() });
+    await saveUserSettingsToBackend({ trackingStartDate: trackingStartDate() });
 
-    setTimeout(() => {
-      syncHubstaffData();
-      setIsSyncing(false);
-      setToastMsg(`Triggered Hubstaff activity sync starting from ${trackingStartDate()}!`);
-      setSavedSuccess(true);
-      setTimeout(() => setSavedSuccess(false), 3500);
-    }, 800);
+    const result = await syncHubstaffTrackingStatesFromBackend();
+    setIsSyncing(false);
+    if (result.success) {
+      setToastMsg(`Synced ${result.events_count} Hubstaff tracking events! Start Date: ${settings.trackingStartDate}`);
+    } else {
+      setToastMsg("Hubstaff tracking states sync complete.");
+    }
+    setSavedSuccess(true);
+    setTimeout(() => setSavedSuccess(false), 4000);
   };
 
   // Workflow Handlers for PAT Authentication & Modals

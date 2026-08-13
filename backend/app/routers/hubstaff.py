@@ -310,9 +310,9 @@ async def hubstaff_webhook_receiver(request: Request, db: AsyncSession = Depends
     )
 
     try:
-        event_time = datetime.fromisoformat(str(occurred_at_raw).replace("Z", "+00:00"))
+        event_time = datetime.fromisoformat(str(occurred_at_raw).replace("Z", "+00:00")).replace(microsecond=0)
     except Exception:
-        event_time = datetime.now(timezone.utc)
+        event_time = datetime.now(timezone.utc).replace(microsecond=0)
 
     # Resolve local active database user
     user_res = await db.execute(select(User).limit(1))

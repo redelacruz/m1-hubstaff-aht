@@ -432,6 +432,15 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
     prjs_res = await db.execute(select(Project))
     prjs_map = {p.id: p.name for p in prjs_res.scalars().all()}
 
+    # Bulk fetch existing local events into memory for fast fuzzy matching
+    local_events_res = await db.execute(
+        select(HubstaffEvent).where(
+            HubstaffEvent.user_id == user_id,
+            HubstaffEvent.event_time >= fetch_cutoff_datetime,
+        )
+    )
+    local_events = list(local_events_res.scalars().all())
+
     remote_event_ids = set()
 
     for org in orgs:
@@ -453,26 +462,44 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
                 evt_type = str(evt.get("type", "start")).lower()
                 event_name = "Timer Started" if evt_type == "start" else "Timer Stopped"
 
-                # Parse occurred_at
+                # Parse occurred_at (truncate microseconds for 1-second precision)
                 raw_time = evt.get("occurred_at", "")
                 try:
-                    event_time = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+                    event_time = datetime.fromisoformat(raw_time.replace("Z", "+00:00")).replace(microsecond=0)
                 except Exception:
-                    event_time = datetime.now(timezone.utc)
+                    event_time = datetime.now(timezone.utc).replace(microsecond=0)
 
                 remote_event_ids.add(evt_id_str)
 
-                # Check if event already exists
-                existing_res = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id_str))
-                existing_evt = existing_res.scalar_one_or_none()
+                # Check if exact ID match exists in local DB
+                existing_evt = next((e for e in local_events if e.id == evt_id_str), None)
 
                 if existing_evt:
-                    # Update fields if modified
                     existing_evt.project_id = prj_id_str
                     existing_evt.event_name = event_name
                     existing_evt.event_time = event_time
                 else:
-                    # Insert new event
+                    # Fuzzy match against real-time webhook events (UUIDs) within <= 5s window
+                    correlated_webhook_evt = None
+                    for local_evt in local_events:
+                        if (
+                            local_evt.project_id == prj_id_str
+                            and local_evt.event_name == event_name
+                            and abs((local_evt.event_time.replace(microsecond=0) - event_time).total_seconds()) <= 5.0
+                        ):
+                            correlated_webhook_evt = local_evt
+                            break
+
+                    if correlated_webhook_evt:
+                        # Promote Webhook UUID event to official REST API Integer ID event
+                        remote_event_ids.add(correlated_webhook_evt.id)
+                        await db.delete(correlated_webhook_evt)
+                        local_events.remove(correlated_webhook_evt)
+                        logger.info(
+                            f"Correlated Webhook Event ({correlated_webhook_evt.id}) promoted to API Integer ID ({evt_id_str})"
+                        )
+
+                    # Insert promoted/new event
                     new_evt = HubstaffEvent(
                         id=evt_id_str,
                         user_id=user_id,
@@ -481,6 +508,7 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
                         event_time=event_time,
                     )
                     db.add(new_evt)
+                    local_events.append(new_evt)
 
             await db.flush()
             current_stop = chunk_start

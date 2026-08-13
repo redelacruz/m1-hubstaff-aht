@@ -10,6 +10,7 @@ import {
   deleteTaskLog,
   addManualTaskLog,
   formatDuration,
+  formatTaskDuration,
   getUserAvailableRoles,
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
@@ -304,7 +305,7 @@ export default function TaskLogPage() {
 
                       <td class="py-3.5 px-4 whitespace-nowrap font-mono">
                         <div class="text-sm font-bold text-white">
-                          {task.timerMode === "untracked" ? "00:00 (0m)" : formatDuration(task.durationSeconds)}
+                          {task.timerMode === "untracked" ? "00:00 (0m)" : formatTaskDuration(task.durationSeconds)}
                         </div>
                       </td>
 

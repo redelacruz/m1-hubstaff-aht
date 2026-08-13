@@ -14,6 +14,7 @@ import {
   calculateGlobalAHT,
   getAhtStatus,
   formatDuration,
+  formatTaskDuration,
   formatMinutesDecimal,
   activeTimerSeconds,
   getUserAvailableRoles,
@@ -370,7 +371,7 @@ export default function Home() {
 
             <div class="text-center py-4 bg-slate-950 rounded-xl border border-slate-800 my-2">
               <div class="text-4xl font-mono font-extrabold text-white tracking-wider">
-                {timerMode() === "untracked" ? "00:00" : formatDuration(customDurationMins() * 60)}
+                {timerMode() === "untracked" ? "00:00" : formatTaskDuration(customDurationMins() * 60)}
               </div>
               <p class="text-xs text-slate-400 mt-2">
                 {timerMode() === "untracked" ? "Untracked Task Mode (Hubstaff Timer Off)" : "Accumulated Time for Active Task"}
@@ -617,7 +618,7 @@ export default function Home() {
 
                       <td class="py-3 px-4 whitespace-nowrap font-mono">
                         <div class="text-sm font-bold text-white">
-                          {task.timerMode === "untracked" ? "00:00 (0m)" : formatDuration(task.durationSeconds)}
+                          {task.timerMode === "untracked" ? "00:00 (0m)" : formatTaskDuration(task.durationSeconds)}
                         </div>
                       </td>
 

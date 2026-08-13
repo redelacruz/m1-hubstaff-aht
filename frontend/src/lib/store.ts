@@ -676,8 +676,20 @@ export const disconnectHubstaffAccountInBackend = async () => {
   saveStateToLocalStorage();
 };
 
-// Helper utilities for AHT calculations
 export const formatDuration = (totalSeconds: number): string => {
+  if (isNaN(totalSeconds) || totalSeconds <= 0) return "0h 0m 0s";
+  const mins = Math.floor(totalSeconds / 60);
+  const secs = Math.floor(totalSeconds % 60);
+  const hours = Math.floor(mins / 60);
+  const remainingMins = mins % 60;
+
+  if (hours > 0) {
+    return `${hours}h ${remainingMins}m ${secs.toString().padStart(2, "0")}s`;
+  }
+  return `${remainingMins}m ${secs.toString().padStart(2, "0")}s`;
+};
+
+export const formatTaskDuration = (totalSeconds: number): string => {
   if (isNaN(totalSeconds) || totalSeconds < 0) return "00:00";
   const mins = Math.floor(totalSeconds / 60);
   const secs = Math.floor(totalSeconds % 60);

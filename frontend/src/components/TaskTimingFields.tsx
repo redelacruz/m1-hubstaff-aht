@@ -69,22 +69,20 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
           <button
             type="button"
             onClick={() => props.onTimingModeChange("timestamps")}
-            class={`px-3 py-1 rounded-lg transition-all ${
-              props.timingMode === "timestamps"
-                ? "bg-sky-600 text-white font-medium"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
+            class={`px-3 py-1 rounded-lg transition-all ${props.timingMode === "timestamps"
+              ? "bg-sky-600 text-white font-medium"
+              : "text-slate-400 hover:text-slate-200"
+              }`}
           >
             Start & End Time
           </button>
           <button
             type="button"
             onClick={() => props.onTimingModeChange("duration")}
-            class={`px-3 py-1 rounded-lg transition-all ${
-              props.timingMode === "duration"
-                ? "bg-sky-600 text-white font-medium"
-                : "text-slate-400 hover:text-slate-200"
-            }`}
+            class={`px-3 py-1 rounded-lg transition-all ${props.timingMode === "duration"
+              ? "bg-sky-600 text-white font-medium"
+              : "text-slate-400 hover:text-slate-200"
+              }`}
           >
             Duration
           </button>
@@ -98,7 +96,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
             <div>
               <div class="flex items-center justify-between mb-1">
                 <label class="text-xs text-slate-400">
-                  Start Date & Time (with seconds)
+                  Start Date & Time
                 </label>
                 <button
                   type="button"
@@ -172,7 +170,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
           <div>
             <div class="flex items-center justify-between mb-1">
               <label class="text-xs text-slate-400">
-                Start Time (with seconds)
+                Start Time
               </label>
               <button
                 type="button"
@@ -208,7 +206,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
           <div>
             <div class="flex items-center justify-between mb-1">
               <label class="text-xs text-slate-400">
-                End Time (with seconds)
+                End Time
               </label>
               <button
                 type="button"

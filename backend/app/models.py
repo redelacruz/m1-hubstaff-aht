@@ -199,3 +199,24 @@ class HubstaffTimeTotal(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="time_totals")
+
+
+class WebhookSubscription(Base):
+    __tablename__ = "webhook_subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(
+        String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    organization_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    webhook_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    target_url: Mapped[str] = mapped_column(String(500), nullable=False)
+    secret: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    events: Mapped[str] = mapped_column(String(255), default="timer.start,timer.stop", nullable=False)
+    status: Mapped[str] = mapped_column(String(50), default="active", nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationship
+    user: Mapped["User"] = relationship("User")

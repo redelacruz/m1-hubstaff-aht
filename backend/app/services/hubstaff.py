@@ -15,6 +15,7 @@ from app.models import (
     UserSettings,
     Organization,
     Project,
+    WebhookSubscription,
 )
 from sqlalchemy import select
 
@@ -341,6 +342,20 @@ async def provision_single_user_environment(
         logger.warning(f"Could not fetch organizations during PAT provisioning: {e}")
         await db.rollback()
 
+    # 7. Force initial full historical tracking state reconciliation up to Tracking Start Date
+    try:
+        await sync_user_tracking_states(user_id_str, access_token, db)
+    except Exception as e:
+        logger.warning(f"Could not complete initial tracking state reconciliation during PAT provisioning: {e}")
+        await db.rollback()
+
+    # 8. Subscribe to Hubstaff V2 webhooks (timer.start, timer.stop)
+    try:
+        await subscribe_organization_webhooks(user_id_str, access_token, db)
+    except Exception as e:
+        logger.warning(f"Could not subscribe to Hubstaff webhooks during PAT provisioning: {e}")
+        await db.rollback()
+
     await db.refresh(new_user)
     await db.refresh(new_credential)
 
@@ -522,3 +537,97 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
         "events_count": len(events_payload),
         "events": events_payload,
     }
+
+
+async def subscribe_organization_webhooks(
+    user_id: str,
+    access_token: str,
+    db: AsyncSession,
+) -> List[Dict[str, Any]]:
+    """
+    Subscribes to Hubstaff V2 webhooks (events: timer.start, timer.stop) for user's organizations.
+    Target URL: https://hubstaff-data.redelacruz.com/api/hubstaff/webhook
+    Endpoint: POST /v2/organizations/{organization_id}/webhooks
+    Saves subscription record into PostgreSQL webhook_subscriptions table.
+    """
+    target_url = "https://hubstaff-data.redelacruz.com/api/hubstaff/webhook"
+    events = ["timer.start", "timer.stop"]
+
+    orgs_res = await db.execute(select(Organization).where(Organization.user_id == user_id))
+    orgs = orgs_res.scalars().all()
+
+    subscriptions = []
+
+    for org in orgs:
+        # Check if active subscription already exists for this org & URL
+        existing_res = await db.execute(
+            select(WebhookSubscription).where(
+                WebhookSubscription.user_id == user_id,
+                WebhookSubscription.organization_id == org.id,
+                WebhookSubscription.target_url == target_url,
+            )
+        )
+        existing_sub = existing_res.scalar_one_or_none()
+        if existing_sub and existing_sub.status == "active":
+            subscriptions.append({
+                "organization_id": org.id,
+                "webhook_id": existing_sub.webhook_id,
+                "target_url": existing_sub.target_url,
+                "status": existing_sub.status,
+                "events": existing_sub.events,
+            })
+            continue
+
+        url = f"{HUBSTAFF_API_BASE_URL}/organizations/{org.id}/webhooks"
+        headers = {
+            "Authorization": f"Bearer {access_token}",
+            "Content-Type": "application/json",
+            "Accept": "*/*",
+        }
+        body = {
+            "target_url": target_url,
+            "events": events,
+        }
+
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            try:
+                response = await client.post(url, headers=headers, json=body)
+                if response.status_code in (200, 201):
+                    res_data = response.json()
+                    webhook_obj = res_data.get("webhook", res_data)
+                    webhook_id = str(webhook_obj.get("id", f"wh_{org.id}_01"))
+                    secret = webhook_obj.get("secret") or res_data.get("secret")
+
+                    if existing_sub:
+                        existing_sub.webhook_id = webhook_id
+                        existing_sub.status = "active"
+                        if secret:
+                            existing_sub.secret = secret
+                    else:
+                        new_sub = WebhookSubscription(
+                            user_id=user_id,
+                            organization_id=org.id,
+                            webhook_id=webhook_id,
+                            target_url=target_url,
+                            secret=secret,
+                            events="timer.start,timer.stop",
+                            status="active",
+                        )
+                        db.add(new_sub)
+
+                    await db.commit()
+                    subscriptions.append({
+                        "organization_id": org.id,
+                        "webhook_id": webhook_id,
+                        "target_url": target_url,
+                        "status": "active",
+                        "events": "timer.start,timer.stop",
+                    })
+                else:
+                    logger.warning(
+                        f"Hubstaff webhook subscription status {response.status_code}: {response.text}"
+                    )
+            except Exception as e:
+                logger.warning(f"Error subscribing to Hubstaff webhook for org {org.id}: {e}")
+
+    return subscriptions

@@ -1,13 +1,44 @@
+import asyncio
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text
+from sqlalchemy import text, select
 
 from app.config import settings
-from app.database import get_db, engine, Base
+from app.database import get_db, engine, Base, AsyncSessionLocal
 import app.models  # Register models with SQLAlchemy Base metadata
 from app.routers import hubstaff
+from app.services.hubstaff import sync_user_tracking_states
+
+logger = logging.getLogger(__name__)
+
+
+async def start_periodic_reconciliation_task():
+    """
+    Background task running twice every day (every 12 hours = 43,200 seconds)
+    to perform a limited 7-day state reconciliation, safeguarding against missed webhook events.
+    """
+    while True:
+        try:
+            await asyncio.sleep(43200)
+            logger.info("Executing scheduled 12-hour 7-day background reconciliation...")
+            async with AsyncSessionLocal() as db:
+                user_res = await db.execute(select(app.models.User).limit(1))
+                user = user_res.scalar_one_or_none()
+                if user:
+                    cred_res = await db.execute(
+                        select(app.models.HubstaffCredential).where(app.models.HubstaffCredential.user_id == user.id)
+                    )
+                    credential = cred_res.scalar_one_or_none()
+                    if credential and credential.access_token:
+                        await sync_user_tracking_states(user.id, credential.access_token, db, max_days=7)
+                        logger.info("Completed scheduled 12-hour 7-day background reconciliation.")
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in background reconciliation task: {e}")
 
 
 @asynccontextmanager
@@ -28,6 +59,21 @@ async def lifespan(app: FastAPI):
         )
         await conn.execute(
             text(
+                "CREATE TABLE IF NOT EXISTS webhook_subscriptions ("
+                "id SERIAL PRIMARY KEY, "
+                "user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                "organization_id VARCHAR(50) NOT NULL, "
+                "webhook_id VARCHAR(50) NOT NULL, "
+                "target_url VARCHAR(500) NOT NULL, "
+                "secret VARCHAR(255), "
+                "events VARCHAR(255) NOT NULL DEFAULT 'timer.start,timer.stop', "
+                "status VARCHAR(50) NOT NULL DEFAULT 'active', "
+                "updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"
+                ");"
+            )
+        )
+        await conn.execute(
+            text(
                 "ALTER TABLE projects ADD COLUMN IF NOT EXISTS organization_id VARCHAR(50) REFERENCES organizations(id) ON DELETE CASCADE;"
             )
         )
@@ -36,7 +82,11 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'active';"
             )
         )
+
+    # Start 12-hour background reconciliation loop task
+    task = asyncio.create_task(start_periodic_reconciliation_task())
     yield
+    task.cancel()
 
 
 app = FastAPI(

@@ -1,5 +1,5 @@
-from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -14,6 +14,7 @@ from app.models import (
     UserSettings,
     Organization,
     Project,
+    WebhookSubscription,
 )
 from app.services.hubstaff import (
     exchange_pat_for_tokens,
@@ -21,6 +22,7 @@ from app.services.hubstaff import (
     provision_single_user_environment,
     sync_user_organizations_and_projects,
     sync_user_tracking_states,
+    subscribe_organization_webhooks,
 )
 
 router = APIRouter(prefix="/api/hubstaff", tags=["Hubstaff Integration"])
@@ -52,7 +54,7 @@ async def submit_pat(request: PatSubmissionRequest, db: AsyncSession = Depends(g
     access_token = token_response["access_token"]
     user_data = await fetch_user_me(access_token)
 
-    # 3. Wipe old database records & provision new user profile
+    # 3. Wipe old database records & provision new user profile, force full tracking states sync & subscribe webhooks
     user, credential = await provision_single_user_environment(
         pat_token=pat,
         token_response=token_response,
@@ -138,6 +140,17 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
             ],
         })
 
+    # Webhook Subscription Status
+    sub_result = await db.execute(select(WebhookSubscription).where(WebhookSubscription.user_id == user.id))
+    subscription = sub_result.scalars().first()
+
+    webhook_status_payload = {
+        "is_active": bool(subscription and subscription.status == "active"),
+        "target_url": subscription.target_url if subscription else "https://hubstaff-data.redelacruz.com/api/hubstaff/webhook",
+        "events": ["timer.start", "timer.stop"],
+        "updated_at": subscription.updated_at.isoformat() if subscription and subscription.updated_at else None,
+    }
+
     return {
         "connected": bool(credential and credential.is_connected),
         "is_locked": bool(credential.is_locked) if credential else False,
@@ -159,6 +172,7 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
             "reviewer_max_aht_minutes": float(user_setting.reviewer_max_aht_minutes) if user_setting else 18.0,
         } if user_setting else None,
         "organizations": orgs_payload,
+        "webhook_status": webhook_status_payload,
     }
 
 
@@ -191,7 +205,78 @@ async def sync_tracking_states_endpoint(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Hubstaff account is not connected.")
 
     sync_result = await sync_user_tracking_states(user.id, credential.access_token, db)
+    try:
+        await subscribe_organization_webhooks(user.id, credential.access_token, db)
+    except Exception:
+        pass
     return sync_result
+
+
+@router.post("/webhook")
+async def hubstaff_webhook_receiver(request: Request, db: AsyncSession = Depends(get_db)):
+    # 1. Check for Hubstaff Handshake Verification Header (X-Hook-Secret)
+    hook_secret = request.headers.get("X-Hook-Secret")
+    body_bytes = await request.body()
+
+    # Handshake verification (empty body or handshake verification POST)
+    if hook_secret and (not body_bytes or body_bytes == b"{}" or body_bytes == b""):
+        return Response(
+            content="",
+            status_code=200,
+            headers={"X-Hook-Secret": hook_secret}
+        )
+
+    # 2. Parse Incoming Event Telemetry Payload (timer.start / timer.stop)
+    try:
+        payload = await request.json()
+    except Exception:
+        if hook_secret:
+            return Response(content="", status_code=200, headers={"X-Hook-Secret": hook_secret})
+        return Response(content='{"success": true}', status_code=200, media_type="application/json")
+
+    evt_type = payload.get("type", "").lower()
+    if "timer.start" in evt_type or "timer.stop" in evt_type:
+        event_name = "Timer Started" if "start" in evt_type else "Timer Stopped"
+        evt_data = payload.get("event") or payload.get("tracking_state") or payload
+        evt_id = str(evt_data.get("id", payload.get("id", "")))
+        user_id = str(evt_data.get("user_id", payload.get("user_id", "")))
+        project_id = str(evt_data.get("project_id", payload.get("project_id", "")))
+        occurred_at_raw = evt_data.get("occurred_at") or payload.get("occurred_at") or ""
+
+        try:
+            event_time = datetime.fromisoformat(occurred_at_raw.replace("Z", "+00:00"))
+        except Exception:
+            event_time = datetime.now(timezone.utc)
+
+        if evt_id and user_id:
+            existing_res = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id))
+            existing_evt = existing_res.scalar_one_or_none()
+
+            if existing_evt:
+                existing_evt.project_id = project_id
+                existing_evt.event_name = event_name
+                existing_evt.event_time = event_time
+            else:
+                new_evt = HubstaffEvent(
+                    id=evt_id,
+                    user_id=user_id,
+                    project_id=project_id,
+                    event_name=event_name,
+                    event_time=event_time,
+                )
+                db.add(new_evt)
+            await db.commit()
+
+    response_headers = {}
+    if hook_secret:
+        response_headers["X-Hook-Secret"] = hook_secret
+
+    return Response(
+        content='{"success": true}',
+        status_code=200,
+        media_type="application/json",
+        headers=response_headers,
+    )
 
 
 @router.put("/user-settings")
@@ -244,6 +329,7 @@ async def update_db_user_settings(request: UserSettingsUpdateRequest, db: AsyncS
 
 @router.delete("/disconnect")
 async def disconnect_hubstaff_account(db: AsyncSession = Depends(get_db)):
+    await db.execute(delete(WebhookSubscription))
     await db.execute(delete(TaskLog))
     await db.execute(delete(HubstaffEvent))
     await db.execute(delete(Project))

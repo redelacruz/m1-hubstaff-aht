@@ -22,7 +22,7 @@ from app.services.hubstaff import (
     provision_single_user_environment,
     sync_user_organizations_and_projects,
     sync_user_tracking_states,
-    subscribe_organization_webhooks,
+    subscribe_user_webhooks,
 )
 
 router = APIRouter(prefix="/api/hubstaff", tags=["Hubstaff Integration"])
@@ -54,7 +54,7 @@ async def submit_pat(request: PatSubmissionRequest, db: AsyncSession = Depends(g
     access_token = token_response["access_token"]
     user_data = await fetch_user_me(access_token)
 
-    # 3. Wipe old database records & provision new user profile, force full tracking states sync & subscribe webhooks
+    # 3. Wipe old database records & provision new user profile, force full tracking states sync & subscribe user webhooks
     user, credential = await provision_single_user_environment(
         pat_token=pat,
         token_response=token_response,
@@ -206,10 +206,15 @@ async def sync_tracking_states_endpoint(db: AsyncSession = Depends(get_db)):
 
     sync_result = await sync_user_tracking_states(user.id, credential.access_token, db)
     try:
-        await subscribe_organization_webhooks(user.id, credential.access_token, db)
+        await subscribe_user_webhooks(user.id, credential.access_token, db)
     except Exception:
         pass
     return sync_result
+
+
+@router.get("/webhook")
+async def hubstaff_webhook_health_check():
+    return {"status": "ok", "message": "Hubstaff webhook receiver endpoint is active."}
 
 
 @router.post("/webhook")

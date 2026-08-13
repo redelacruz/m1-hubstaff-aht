@@ -291,7 +291,10 @@ async def hubstaff_webhook_receiver(request: Request, db: AsyncSession = Depends
             event_name = "Timer Stopped"
 
         evt_id = str(evt_data.get("id") or payload.get("id") or f"wh_evt_{int(datetime.now().timestamp())}")
-        project_id = str(evt_data.get("project_id") or payload.get("project_id") or "")
+        project_id = str(evt_data.get("project_id") or payload.get("project_id") or "").strip()
+        if not project_id:
+            project_id = "0"
+
         occurred_at_raw = evt_data.get("occurred_at") or evt_data.get("created_at") or payload.get("occurred_at") or ""
 
         try:
@@ -303,26 +306,39 @@ async def hubstaff_webhook_receiver(request: Request, db: AsyncSession = Depends
         user_res = await db.execute(select(User).limit(1))
         db_user = user_res.scalar_one_or_none()
 
+        if not db_user:
+            db_user = User(
+                id="usr_alex_rivera_01",
+                name="Alex Rivera",
+                first_name="Alex",
+                last_name="Rivera",
+                email="alex.rivera@company.com",
+                time_zone="America/New_York",
+                status="active",
+            )
+            db.add(db_user)
+            await db.flush()
+
         if db_user and evt_id:
             # Ensure project exists in projects table to satisfy FK constraint
-            if project_id:
-                prj_res = await db.execute(select(Project).where(Project.id == project_id))
-                if not prj_res.scalar_one_or_none():
-                    new_prj = Project(
-                        id=project_id,
-                        user_id=db_user.id,
-                        name=f"Project #{project_id}",
-                        status="active",
-                    )
-                    db.add(new_prj)
-                    await db.flush()
+            prj_res = await db.execute(select(Project).where(Project.id == project_id))
+            if not prj_res.scalar_one_or_none():
+                prj_name = "General / Unassigned Time" if project_id == "0" else f"Project #{project_id}"
+                new_prj = Project(
+                    id=project_id,
+                    organization_id=None,
+                    name=prj_name,
+                    status="active",
+                    role_type="Unassigned",
+                )
+                db.add(new_prj)
+                await db.flush()
 
             existing_res = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id))
             existing_evt = existing_res.scalar_one_or_none()
 
             if existing_evt:
-                if project_id:
-                    existing_evt.project_id = project_id
+                existing_evt.project_id = project_id
                 existing_evt.event_name = event_name
                 existing_evt.event_time = event_time
                 logger.info(f"Updated existing HubstaffEvent {evt_id} -> {event_name}")

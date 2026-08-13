@@ -26,7 +26,7 @@ interface AddManualTaskModalProps {
 
 export function AddManualTaskModal(props: AddManualTaskModalProps) {
   const [role, setRole] = createSignal<Role>("Trainer");
-  const [subrole, setSubrole] = createSignal<Subrole>("Audio Evaluation");
+  const [subrole, setSubrole] = createSignal<Subrole>("Trainer 1");
   const [title, setTitle] = createSignal<string>("");
   const [url, setUrl] = createSignal<string>("");
   const [notes, setNotes] = createSignal<string>("");

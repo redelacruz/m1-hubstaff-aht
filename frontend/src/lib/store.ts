@@ -78,11 +78,19 @@ export interface HubstaffOrg {
   projects: HubstaffOrgProject[];
 }
 
+export interface WebhookStatusInfo {
+  is_active: boolean;
+  target_url: string;
+  events: string[];
+  updated_at?: string | null;
+}
+
 export interface HubstaffAuthStatus {
   isConnected: boolean;
   isLocked: boolean;
   user: UserProfile | null;
   organizations?: HubstaffOrg[];
+  webhook_status?: WebhookStatusInfo;
 }
 
 const STORAGE_KEY = "hubstaff_aht_app_state_v3";
@@ -368,6 +376,7 @@ export const fetchHubstaffStatusFromBackend = async () => {
         isLocked: data.is_locked,
         user: data.user || null,
         organizations: data.organizations || [],
+        webhook_status: data.webhook_status || undefined,
       });
 
       if (data.user_settings) {

@@ -343,6 +343,34 @@ export default function Settings() {
                   </div>
                 </div>
               </div>
+
+              {/* Webhook Telemetry Status Bar */}
+              <div class="pt-3 border-t border-slate-900 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                <div class="flex items-center space-x-2">
+                  <span class="text-slate-500 font-medium">Webhook Status:</span>
+                  <Show
+                    when={hubstaffStatus().webhook_status?.is_active}
+                    fallback={
+                      <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-slate-900 border border-slate-800 text-slate-400 text-[11px] font-medium">
+                        <span class="w-2 h-2 rounded-full bg-slate-500"></span>
+                        <span>Pending Webhook Subscription</span>
+                      </span>
+                    }
+                  >
+                    <span class="inline-flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-emerald-950/80 border border-emerald-800/80 text-emerald-300 text-[11px] font-bold">
+                      <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                      <span>Active (timer.start, timer.stop)</span>
+                    </span>
+                  </Show>
+                </div>
+
+                <div class="text-[11px] text-slate-400 flex items-center space-x-2 truncate font-mono">
+                  <span class="text-slate-500">Target URL:</span>
+                  <span class="text-sky-300 bg-slate-900 px-2 py-0.5 rounded border border-slate-800 truncate">
+                    {hubstaffStatus().webhook_status?.target_url || "https://hubstaff-data.redelacruz.com/api/hubstaff/webhook"}
+                  </span>
+                </div>
+              </div>
             </div>
           )}
         </Show>

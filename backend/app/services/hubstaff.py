@@ -387,8 +387,11 @@ async def fetch_organization_tracking_states(
 async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSession) -> Dict[str, Any]:
     """
     Queries tracking_states endpoint backward in <= 7-day chunks starting from now
-    down to user's set tracking_start_date (or 6-month retention limit).
-    Saves events to PostgreSQL, and adjusts user's tracking_start_date if a gap is detected.
+    down to user's set tracking_start_date (or 3-month / 90-day window limit).
+    Performs full state reconciliation:
+    1. Upserts new and modified events into PostgreSQL.
+    2. Prunes local database events within the 3-month window that no longer exist on Hubstaff.
+    3. Adjusts user's tracking_start_date if a gap is detected.
     """
     # 1. Fetch user settings
     settings_res = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
@@ -398,8 +401,8 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
     start_datetime_utc = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
 
     now_utc = datetime.now(timezone.utc)
-    six_months_ago = now_utc - timedelta(days=180)
-    cutoff_datetime = max(start_datetime_utc, six_months_ago)
+    three_months_ago = now_utc - timedelta(days=90)
+    cutoff_datetime = max(start_datetime_utc, three_months_ago)
 
     # 2. Fetch user's organizations
     orgs_res = await db.execute(select(Organization).where(Organization.user_id == user_id))
@@ -409,7 +412,7 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
     prjs_res = await db.execute(select(Project))
     prjs_map = {p.id: p.name for p in prjs_res.scalars().all()}
 
-    synced_event_ids = set()
+    remote_event_ids = set()
 
     for org in orgs:
         current_stop = now_utc
@@ -437,9 +440,19 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
                 except Exception:
                     event_time = datetime.now(timezone.utc)
 
+                remote_event_ids.add(evt_id_str)
+
                 # Check if event already exists
-                existing = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id_str))
-                if not existing.scalar_one_or_none():
+                existing_res = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id_str))
+                existing_evt = existing_res.scalar_one_or_none()
+
+                if existing_evt:
+                    # Update fields if modified
+                    existing_evt.project_id = prj_id_str
+                    existing_evt.event_name = event_name
+                    existing_evt.event_time = event_time
+                else:
+                    # Insert new event
                     new_evt = HubstaffEvent(
                         id=evt_id_str,
                         user_id=user_id,
@@ -448,14 +461,27 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
                         event_time=event_time,
                     )
                     db.add(new_evt)
-                    synced_event_ids.add(evt_id_str)
 
             await db.flush()
             current_stop = chunk_start
 
+    # 3. Prune deleted events within the 3-month window [cutoff_datetime, now_utc]
+    local_window_res = await db.execute(
+        select(HubstaffEvent).where(
+            HubstaffEvent.user_id == user_id,
+            HubstaffEvent.event_time >= cutoff_datetime,
+            HubstaffEvent.event_time <= now_utc,
+        )
+    )
+    local_window_events = local_window_res.scalars().all()
+
+    for local_evt in local_window_events:
+        if local_evt.id not in remote_event_ids:
+            await db.delete(local_evt)
+
     await db.commit()
 
-    # 3. Gap adjustment logic: find earliest event_time among all user's events in DB
+    # 4. Gap adjustment logic: find earliest event_time among all user's events in DB
     all_events_res = await db.execute(
         select(HubstaffEvent)
         .where(HubstaffEvent.user_id == user_id)

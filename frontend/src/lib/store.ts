@@ -358,6 +358,21 @@ export const syncHubstaffTrackingStatesFromBackend = async (): Promise<{
   return { success: false, events_count: 0 };
 };
 
+export const fetchLocalHubstaffEvents = async () => {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/events`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.events)) {
+        setHubstaffEvents(data.events);
+        saveStateToLocalStorage();
+      }
+    }
+  } catch (e) {
+    console.error("Failed to fetch local events:", e);
+  }
+};
+
 // API Integration Helpers for Hubstaff Auth & Status
 const getApiBaseUrl = () => {
   if (typeof window !== "undefined") {

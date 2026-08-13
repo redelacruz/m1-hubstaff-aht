@@ -1,7 +1,8 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import {
   hubstaffEvents,
   syncHubstaffTrackingStatesFromBackend,
+  fetchLocalHubstaffEvents,
   settings,
   updateUserSettings,
 } from "../lib/store";
@@ -11,6 +12,15 @@ export default function HubstaffDataPage() {
   const [pageSize, setPageSize] = createSignal<number>(settings.hubstaffPageSize || 25);
   const [toastMsg, setToastMsg] = createSignal<string>("");
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
+
+  // Auto-refresh events from local database every 5 seconds for (semi-)real time updates
+  onMount(() => {
+    fetchLocalHubstaffEvents();
+    const interval = setInterval(() => {
+      fetchLocalHubstaffEvents();
+    }, 5000);
+    onCleanup(() => clearInterval(interval));
+  });
 
   // Sorting & Filtering State
   const [sortOrder, setSortOrder] = createSignal<"desc" | "asc">("desc"); // Default: reverse chronological (newest first)

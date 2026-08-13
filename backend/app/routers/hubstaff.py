@@ -212,6 +212,38 @@ async def sync_tracking_states_endpoint(db: AsyncSession = Depends(get_db)):
     return sync_result
 
 
+@router.get("/events")
+async def get_local_hubstaff_events(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).limit(1))
+    user = result.scalar_one_or_none()
+    if not user:
+        return {"events": []}
+
+    prjs_res = await db.execute(select(Project))
+    prjs_map = {p.id: p.name for p in prjs_res.scalars().all()}
+
+    all_events_res = await db.execute(
+        select(HubstaffEvent)
+        .where(HubstaffEvent.user_id == user.id)
+        .order_by(HubstaffEvent.event_time.desc())
+    )
+    all_events = all_events_res.scalars().all()
+
+    events_payload = []
+    for evt in all_events:
+        prj_name = prjs_map.get(evt.project_id, f"Project #{evt.project_id}")
+        events_payload.append({
+            "id": evt.id,
+            "userId": evt.user_id,
+            "eventName": evt.event_name,
+            "eventTime": evt.event_time.isoformat(),
+            "projectId": evt.project_id,
+            "projectName": prj_name,
+        })
+
+    return {"events": events_payload}
+
+
 @router.get("/webhook")
 async def hubstaff_webhook_health_check():
     return {"status": "ok", "message": "Hubstaff webhook receiver endpoint is active."}

@@ -387,9 +387,9 @@ async def fetch_organization_tracking_states(
 async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSession) -> Dict[str, Any]:
     """
     Queries tracking_states endpoint backward in <= 7-day chunks starting from now
-    down to user's set tracking_start_date (or 3-month / 90-day window limit).
-    Performs full state reconciliation:
-    1. Upserts new and modified events into PostgreSQL.
+    down to user's set tracking_start_date (up to 6-month API retention limit).
+    Performs state reconciliation:
+    1. Upserts new and modified events into PostgreSQL all the way back to tracking_start_date.
     2. Prunes local database events within the 3-month window that no longer exist on Hubstaff.
     3. Adjusts user's tracking_start_date if a gap is detected.
     """
@@ -401,8 +401,13 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
     start_datetime_utc = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
 
     now_utc = datetime.now(timezone.utc)
+    six_months_ago = now_utc - timedelta(days=180)
     three_months_ago = now_utc - timedelta(days=90)
-    cutoff_datetime = max(start_datetime_utc, three_months_ago)
+
+    # API Fetching Cutoff: query backward to tracking_start_date (up to 6 months API retention limit)
+    fetch_cutoff_datetime = max(start_datetime_utc, six_months_ago)
+    # Deletion Pruning Cutoff: only prune/delete local events within the last 3 months
+    prune_cutoff_datetime = max(start_datetime_utc, three_months_ago)
 
     # 2. Fetch user's organizations
     orgs_res = await db.execute(select(Organization).where(Organization.user_id == user_id))
@@ -416,8 +421,8 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
 
     for org in orgs:
         current_stop = now_utc
-        while current_stop > cutoff_datetime:
-            chunk_start = max(current_stop - timedelta(days=7), cutoff_datetime)
+        while current_stop > fetch_cutoff_datetime:
+            chunk_start = max(current_stop - timedelta(days=7), fetch_cutoff_datetime)
             if chunk_start >= current_stop:
                 break
 
@@ -465,11 +470,11 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
             await db.flush()
             current_stop = chunk_start
 
-    # 3. Prune deleted events within the 3-month window [cutoff_datetime, now_utc]
+    # 3. Prune deleted events ONLY within the 3-month window [prune_cutoff_datetime, now_utc]
     local_window_res = await db.execute(
         select(HubstaffEvent).where(
             HubstaffEvent.user_id == user_id,
-            HubstaffEvent.event_time >= cutoff_datetime,
+            HubstaffEvent.event_time >= prune_cutoff_datetime,
             HubstaffEvent.event_time <= now_utc,
         )
     )

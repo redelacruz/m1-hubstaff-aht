@@ -12,9 +12,30 @@ from app.routers import hubstaff
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Auto-create tables on application startup
+    # Auto-create tables & execute column DDL migrations on application startup
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            text(
+                "CREATE TABLE IF NOT EXISTS organizations ("
+                "id VARCHAR(50) PRIMARY KEY, "
+                "user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                "name VARCHAR(150) NOT NULL, "
+                "status VARCHAR(50) NOT NULL DEFAULT 'active', "
+                "created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"
+                ");"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE projects ADD COLUMN IF NOT EXISTS organization_id VARCHAR(50) REFERENCES organizations(id) ON DELETE CASCADE;"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'active';"
+            )
+        )
     yield
 
 

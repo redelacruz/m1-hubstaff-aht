@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from pydantic import BaseModel, Field
@@ -24,6 +25,8 @@ from app.services.hubstaff import (
     sync_user_tracking_states,
     subscribe_user_webhooks,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/hubstaff", tags=["Hubstaff Integration"])
 
@@ -257,51 +260,83 @@ async def hubstaff_webhook_receiver(request: Request, db: AsyncSession = Depends
 
     # Handshake verification (empty body or handshake verification POST)
     if hook_secret and (not body_bytes or body_bytes == b"{}" or body_bytes == b""):
+        logger.info("Received Hubstaff webhook handshake request. Responding with 200 OK and X-Hook-Secret.")
         return Response(
             content="",
             status_code=200,
             headers={"X-Hook-Secret": hook_secret}
         )
 
-    # 2. Parse Incoming Event Telemetry Payload (timer.start / timer.stop)
+    # 2. Parse Incoming Event Telemetry Payload
     try:
         payload = await request.json()
-    except Exception:
+        logger.info(f"Received Hubstaff Webhook Payload: {payload}")
+    except Exception as e:
+        logger.warning(f"Failed to parse Hubstaff webhook JSON: {e}")
         if hook_secret:
             return Response(content="", status_code=200, headers={"X-Hook-Secret": hook_secret})
         return Response(content='{"success": true}', status_code=200, media_type="application/json")
 
-    evt_type = payload.get("type", "").lower()
-    if "timer.start" in evt_type or "timer.stop" in evt_type:
-        event_name = "Timer Started" if "start" in evt_type else "Timer Stopped"
-        evt_data = payload.get("event") or payload.get("tracking_state") or payload
-        evt_id = str(evt_data.get("id", payload.get("id", "")))
-        user_id = str(evt_data.get("user_id", payload.get("user_id", "")))
-        project_id = str(evt_data.get("project_id", payload.get("project_id", "")))
-        occurred_at_raw = evt_data.get("occurred_at") or payload.get("occurred_at") or ""
+    # Locate event data dictionary inside payload (Hubstaff can use 'data', 'event', 'tracking_state', or root)
+    evt_data = payload.get("data") or payload.get("event") or payload.get("tracking_state") or payload
+    if not isinstance(evt_data, dict):
+        evt_data = payload
+
+    raw_type = (payload.get("type") or payload.get("event") or evt_data.get("type") or payload.get("object") or "").lower()
+
+    # Match event type or process tracking_state
+    if "start" in raw_type or "stop" in raw_type or raw_type in ("timer.start", "timer.stop", "tracking_state", ""):
+        event_name = "Timer Started" if ("start" in raw_type or "start" in str(evt_data.get("type", "")).lower()) else "Timer Stopped"
+        if "stop" in raw_type or "stop" in str(evt_data.get("type", "")).lower():
+            event_name = "Timer Stopped"
+
+        evt_id = str(evt_data.get("id") or payload.get("id") or f"wh_evt_{int(datetime.now().timestamp())}")
+        project_id = str(evt_data.get("project_id") or payload.get("project_id") or "")
+        occurred_at_raw = evt_data.get("occurred_at") or evt_data.get("created_at") or payload.get("occurred_at") or ""
 
         try:
-            event_time = datetime.fromisoformat(occurred_at_raw.replace("Z", "+00:00"))
+            event_time = datetime.fromisoformat(str(occurred_at_raw).replace("Z", "+00:00"))
         except Exception:
             event_time = datetime.now(timezone.utc)
 
-        if evt_id and user_id:
+        # Get local active user from PostgreSQL
+        user_res = await db.execute(select(User).limit(1))
+        db_user = user_res.scalar_one_or_none()
+
+        if db_user and evt_id:
+            # Ensure project exists in projects table to satisfy FK constraint
+            if project_id:
+                prj_res = await db.execute(select(Project).where(Project.id == project_id))
+                if not prj_res.scalar_one_or_none():
+                    new_prj = Project(
+                        id=project_id,
+                        user_id=db_user.id,
+                        name=f"Project #{project_id}",
+                        status="active",
+                    )
+                    db.add(new_prj)
+                    await db.flush()
+
             existing_res = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id))
             existing_evt = existing_res.scalar_one_or_none()
 
             if existing_evt:
-                existing_evt.project_id = project_id
+                if project_id:
+                    existing_evt.project_id = project_id
                 existing_evt.event_name = event_name
                 existing_evt.event_time = event_time
+                logger.info(f"Updated existing HubstaffEvent {evt_id} -> {event_name}")
             else:
                 new_evt = HubstaffEvent(
                     id=evt_id,
-                    user_id=user_id,
+                    user_id=db_user.id,
                     project_id=project_id,
                     event_name=event_name,
                     event_time=event_time,
                 )
                 db.add(new_evt)
+                logger.info(f"Inserted new HubstaffEvent {evt_id} -> {event_name} for project {project_id}")
+
             await db.commit()
 
     response_headers = {}

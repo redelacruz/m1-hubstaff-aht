@@ -110,7 +110,28 @@ export default function HubstaffDataPage() {
     list.sort((a, b) => {
       const timeA = new Date(a.eventTime).getTime();
       const timeB = new Date(b.eventTime).getTime();
-      return sortOrder() === "desc" ? timeB - timeA : timeA - timeB;
+
+      if (timeA !== timeB) {
+        return sortOrder() === "desc" ? timeB - timeA : timeA - timeB;
+      }
+
+      // Secondary Tie-breaker for identical eventTime (e.g. blip events within the same second):
+      // In reverse chronological order ("desc", newest first): "Timer Stopped" is newer than "Timer Started"
+      // In chronological order ("asc", oldest first): "Timer Started" is older than "Timer Stopped"
+      if (a.eventName !== b.eventName) {
+        const aIsStop = a.eventName.toLowerCase().includes("stop");
+        const bIsStop = b.eventName.toLowerCase().includes("stop");
+        if (aIsStop !== bIsStop) {
+          if (sortOrder() === "desc") {
+            return aIsStop ? -1 : 1;
+          } else {
+            return aIsStop ? 1 : -1;
+          }
+        }
+      }
+
+      // Tertiary tie-breaker by ID for deterministic stable sorting
+      return sortOrder() === "desc" ? b.id.localeCompare(a.id) : a.id.localeCompare(b.id);
     });
 
     return list;

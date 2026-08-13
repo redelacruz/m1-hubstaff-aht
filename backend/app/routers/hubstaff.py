@@ -228,7 +228,11 @@ async def get_local_hubstaff_events(db: AsyncSession = Depends(get_db)):
     all_events_res = await db.execute(
         select(HubstaffEvent)
         .where(HubstaffEvent.user_id == user.id)
-        .order_by(HubstaffEvent.event_time.desc())
+        .order_by(
+            HubstaffEvent.event_time.desc(),
+            HubstaffEvent.event_name.desc(),
+            HubstaffEvent.id.desc(),
+        )
     )
     all_events = all_events_res.scalars().all()
 

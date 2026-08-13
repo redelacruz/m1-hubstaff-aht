@@ -15,7 +15,13 @@ from app.models import (
     Organization,
     Project,
 )
-from app.services.hubstaff import exchange_pat_for_tokens, fetch_user_me, provision_single_user_environment, sync_user_organizations_and_projects
+from app.services.hubstaff import (
+    exchange_pat_for_tokens,
+    fetch_user_me,
+    provision_single_user_environment,
+    sync_user_organizations_and_projects,
+    sync_user_tracking_states,
+)
 
 router = APIRouter(prefix="/api/hubstaff", tags=["Hubstaff Integration"])
 
@@ -170,6 +176,22 @@ async def sync_organizations_endpoint(db: AsyncSession = Depends(get_db)):
 
     await sync_user_organizations_and_projects(user.id, credential.access_token, db)
     return {"success": True, "message": "Organizations and projects synced successfully."}
+
+
+@router.post("/sync-tracking-states")
+async def sync_tracking_states_endpoint(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).limit(1))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="No user found.")
+
+    cred_result = await db.execute(select(HubstaffCredential).where(HubstaffCredential.user_id == user.id))
+    credential = cred_result.scalar_one_or_none()
+    if not credential or not credential.access_token:
+        raise HTTPException(status_code=400, detail="Hubstaff account is not connected.")
+
+    sync_result = await sync_user_tracking_states(user.id, credential.access_token, db)
+    return sync_result
 
 
 @router.put("/user-settings")

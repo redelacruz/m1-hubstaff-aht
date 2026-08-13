@@ -600,18 +600,25 @@ export default function Home() {
                       </td>
 
                       <td class="py-3 px-4 whitespace-nowrap">
-                        <Show
-                          when={task.timerMode === "hubstaff"}
-                          fallback={
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">
-                              Untracked Task
+                        <div class="flex flex-col space-y-1">
+                          <Show
+                            when={task.timerMode === "hubstaff"}
+                            fallback={
+                              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">
+                                Untracked Task
+                              </span>
+                            }
+                          >
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
+                              Hubstaff Active
                             </span>
-                          }
-                        >
-                          <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
-                            Hubstaff Active
-                          </span>
-                        </Show>
+                          </Show>
+                          <Show when={task.isManualEntry}>
+                            <span class="w-max text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-sky-800 text-sky-300">
+                              🖊️ Manual Entry
+                            </span>
+                          </Show>
+                        </div>
                       </td>
 
                       <td class="py-3 px-4 whitespace-nowrap font-mono">

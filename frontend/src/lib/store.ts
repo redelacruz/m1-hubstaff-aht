@@ -37,6 +37,7 @@ export interface TaskLogEntry {
   notes: string;
   durationSeconds: number;
   timerMode: TimerMode;
+  isManualEntry?: boolean;
   createdAt: string; // ISO string
 }
 
@@ -273,6 +274,107 @@ export const addTaskLog = (
 
   setTasks((prev: TaskLogEntry[]) => [newTask, ...prev]);
   saveStateToLocalStorage();
+};
+
+export interface AddManualTaskParams {
+  role: Role;
+  subrole: Subrole;
+  title: string;
+  url: string;
+  notes: string;
+  startTime?: string;
+  endTime?: string;
+  taskDate?: string;
+  durationMinutes?: number;
+  isUntracked?: boolean;
+}
+
+export const addManualTaskLog = (params: AddManualTaskParams): { task: TaskLogEntry; message: string } => {
+  const currentUserId = hubstaffStatus().user?.id || DEFAULT_USER.id;
+  let durationSeconds = 0;
+  let timerMode: TimerMode = "untracked";
+  let createdAt = new Date().toISOString();
+  let message = "";
+
+  if (params.startTime) {
+    createdAt = params.startTime;
+  } else if (params.taskDate) {
+    const [y, m, d] = params.taskDate.split("-").map(Number);
+    if (y && m && d) {
+      const dt = new Date(y, m - 1, d, 12, 0, 0);
+      createdAt = dt.toISOString();
+    }
+  }
+
+  if (params.isUntracked) {
+    durationSeconds = 0;
+    timerMode = "untracked";
+    message = "Manual task added as untracked entry (Tasks +1, Hubstaff Hours +0).";
+  } else if (params.startTime && params.endTime) {
+    const startMs = new Date(params.startTime).getTime();
+    const endMs = new Date(params.endTime).getTime();
+    const windowTotalSecs = Math.max(0, Math.round((endMs - startMs) / 1000));
+
+    // Strategy 1: Intersect window [startMs, endMs] with active Hubstaff session events
+    let trackedSeconds = 0;
+    const sortedEvents = [...hubstaffEvents].sort(
+      (a, b) => new Date(a.eventTime).getTime() - new Date(b.eventTime).getTime()
+    );
+
+    let activeStartMs: number | null = null;
+    for (const evt of sortedEvents) {
+      const evtMs = new Date(evt.eventTime).getTime();
+      if (evt.eventName === "Timer Started") {
+        activeStartMs = evtMs;
+      } else if (evt.eventName === "Timer Stopped" && activeStartMs !== null) {
+        const overlapStart = Math.max(activeStartMs, startMs);
+        const overlapEnd = Math.min(evtMs, endMs);
+        if (overlapEnd > overlapStart) {
+          trackedSeconds += Math.round((overlapEnd - overlapStart) / 1000);
+        }
+        activeStartMs = null;
+      }
+    }
+
+    if (trackedSeconds > 0) {
+      durationSeconds = trackedSeconds;
+      timerMode = "hubstaff";
+      message = `Auto-matched ${formatDuration(trackedSeconds)} of active Hubstaff session time within task window.`;
+    } else {
+      durationSeconds = windowTotalSecs;
+      timerMode = "hubstaff";
+      addHubstaffTime(params.role, durationSeconds);
+      message = `Task logged with ${formatDuration(durationSeconds)} window duration (credited to Hubstaff hours).`;
+    }
+  } else if (params.durationMinutes && params.durationMinutes > 0) {
+    durationSeconds = params.durationMinutes * 60;
+    timerMode = "hubstaff";
+    addHubstaffTime(params.role, durationSeconds);
+    message = `Task logged with ${params.durationMinutes}m manual duration (credited to Hubstaff hours).`;
+  } else {
+    durationSeconds = 0;
+    timerMode = "untracked";
+    message = "Manual task added as untracked entry.";
+  }
+
+  const newTask: TaskLogEntry = {
+    id: `task_manual_${Date.now()}`,
+    userId: currentUserId,
+    role: params.role,
+    subrole: params.subrole,
+    title: params.title,
+    url: params.url,
+    notes: params.notes,
+    durationSeconds,
+    timerMode,
+    isManualEntry: true,
+    createdAt,
+  };
+
+  setTasks((prev: TaskLogEntry[]) => [newTask, ...prev]);
+  saveStateToLocalStorage();
+
+  return { task: newTask, message };
 };
 
 export const updateTaskLog = (id: string, updatedFields: Partial<TaskLogEntry>) => {

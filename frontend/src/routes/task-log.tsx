@@ -1,16 +1,19 @@
-import { createSignal, createEffect, For, Show } from "solid-js";
+import { createSignal, For, Show } from "solid-js";
 import {
   Role,
+  Subrole,
   TaskLogEntry,
   tasks,
   settings,
   updateUserSettings,
   updateTaskLog,
   deleteTaskLog,
+  addManualTaskLog,
   formatDuration,
   getUserAvailableRoles,
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
+import { AddManualTaskModal } from "../components/AddManualTaskModal";
 
 export default function TaskLogPage() {
   const [roleFilter, setRoleFilter] = createSignal<Role | "All">("All");
@@ -18,19 +21,18 @@ export default function TaskLogPage() {
   const [currentPage, setCurrentPage] = createSignal<number>(1);
   const [pageSize, setPageSize] = createSignal<number>(settings.pageSize || 25);
 
-  // Edit Modal Signals
+  // Modal Signals
   const [editingTask, setEditingTask] = createSignal<TaskLogEntry | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = createSignal<boolean>(false);
+  const [isAddModalOpen, setIsAddModalOpen] = createSignal<boolean>(false);
   const [toastMsg, setToastMsg] = createSignal<string>("");
 
-  // Persist page size changes to local storage
   const handlePageSizeChange = (size: number) => {
     setPageSize(size);
     updateUserSettings({ pageSize: size });
     setCurrentPage(1);
   };
 
-  // Filtered task logs
   const filteredTasks = () => {
     const query = searchQuery().toLowerCase().trim();
     const r = roleFilter();
@@ -65,6 +67,23 @@ export default function TaskLogPage() {
     setTimeout(() => setToastMsg(""), 3000);
   };
 
+  const handleAddManualTask = (taskData: {
+    role: Role;
+    subrole: Subrole;
+    title: string;
+    url: string;
+    notes: string;
+    startTime?: string;
+    endTime?: string;
+    taskDate?: string;
+    durationMinutes?: number;
+    isUntracked: boolean;
+  }) => {
+    const result = addManualTaskLog(taskData);
+    setToastMsg(result.message);
+    setTimeout(() => setToastMsg(""), 3500);
+  };
+
   return (
     <div class="space-y-8">
       {/* Toast Notification */}
@@ -85,6 +104,13 @@ export default function TaskLogPage() {
         onSave={handleSaveEditedTask}
       />
 
+      {/* Add Manual Task Modal */}
+      <AddManualTaskModal
+        isOpen={isAddModalOpen()}
+        onClose={() => setIsAddModalOpen(false)}
+        onAdd={handleAddManualTask}
+      />
+
       {/* Header */}
       <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
@@ -98,6 +124,19 @@ export default function TaskLogPage() {
           <p class="text-slate-400 text-sm mt-1">
             View, search, edit, and paginate all submitted task logs across roles.
           </p>
+        </div>
+
+        {/* Action Buttons */}
+        <div class="flex items-center space-x-3">
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            class="px-4 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-sky-950 transition-all flex items-center space-x-1.5"
+          >
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+            </svg>
+            <span>Add Manual Task</span>
+          </button>
         </div>
       </div>
 
@@ -242,18 +281,25 @@ export default function TaskLogPage() {
                       </td>
 
                       <td class="py-3.5 px-4 whitespace-nowrap">
-                        <Show
-                          when={task.timerMode === "hubstaff"}
-                          fallback={
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">
-                              Untracked Task
+                        <div class="flex flex-col space-y-1">
+                          <Show
+                            when={task.timerMode === "hubstaff"}
+                            fallback={
+                              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">
+                                Untracked Task
+                              </span>
+                            }
+                          >
+                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
+                              Hubstaff Active
                             </span>
-                          }
-                        >
-                          <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
-                            Hubstaff Active
-                          </span>
-                        </Show>
+                          </Show>
+                          <Show when={task.isManualEntry}>
+                            <span class="w-max text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-sky-800 text-sky-300">
+                              🖊️ Manual Entry
+                            </span>
+                          </Show>
+                        </div>
                       </td>
 
                       <td class="py-3.5 px-4 whitespace-nowrap font-mono">
@@ -290,7 +336,7 @@ export default function TaskLogPage() {
           </table>
         </div>
 
-        {/* Pagination Footer Controls */}
+        {/* Pagination Footer */}
         <div class="pt-4 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs text-slate-400">
           <div>
             Showing <span class="font-bold text-slate-200">{filteredTasks().length > 0 ? (currentPage() - 1) * pageSize() + 1 : 0}</span> to{" "}

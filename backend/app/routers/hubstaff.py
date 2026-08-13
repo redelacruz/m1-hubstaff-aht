@@ -267,7 +267,7 @@ async def hubstaff_webhook_receiver(request: Request, db: AsyncSession = Depends
             headers={"X-Hook-Secret": hook_secret}
         )
 
-    # 2. Parse Incoming Event Telemetry Payload
+    # 2. Parse Incoming Event Telemetry Payload per Hubstaff Webhook Spec
     try:
         payload = await request.json()
         logger.info(f"Received Hubstaff Webhook Payload: {payload}")
@@ -277,83 +277,98 @@ async def hubstaff_webhook_receiver(request: Request, db: AsyncSession = Depends
             return Response(content="", status_code=200, headers={"X-Hook-Secret": hook_secret})
         return Response(content='{"success": true}', status_code=200, media_type="application/json")
 
-    # Locate event data dictionary inside payload (Hubstaff can use 'data', 'event', 'tracking_state', or root)
-    evt_data = payload.get("data") or payload.get("event") or payload.get("tracking_state") or payload
-    if not isinstance(evt_data, dict):
-        evt_data = payload
+    # Extract root fields
+    evt_id = str(payload.get("id", ""))
+    event_type = str(payload.get("event", payload.get("type", ""))).lower()
+    created_at_root = payload.get("created_at")
 
-    raw_type = (payload.get("type") or payload.get("event") or evt_data.get("type") or payload.get("object") or "").lower()
+    # Extract nested 'payload' dictionary
+    inner_payload = payload.get("payload") or payload.get("data") or payload.get("tracking_state") or {}
+    if not isinstance(inner_payload, dict):
+        inner_payload = {}
 
-    # Match event type or process tracking_state
-    if "start" in raw_type or "stop" in raw_type or raw_type in ("timer.start", "timer.stop", "tracking_state", ""):
-        event_name = "Timer Started" if ("start" in raw_type or "start" in str(evt_data.get("type", "")).lower()) else "Timer Stopped"
-        if "stop" in raw_type or "stop" in str(evt_data.get("type", "")).lower():
-            event_name = "Timer Stopped"
+    org_id = str(inner_payload.get("organization_id") or "")
+    project_id = str(inner_payload.get("project_id") or "").strip()
+    project_name = str(inner_payload.get("project_name") or "").strip()
+    user_name_raw = str(inner_payload.get("user_name") or "").strip()
 
-        evt_id = str(evt_data.get("id") or payload.get("id") or f"wh_evt_{int(datetime.now().timestamp())}")
-        project_id = str(evt_data.get("project_id") or payload.get("project_id") or "").strip()
-        if not project_id:
-            project_id = "0"
+    # Determine event_name ('Timer Started' / 'Timer Stopped')
+    if "start" in event_type:
+        event_name = "Timer Started"
+    elif "stop" in event_type:
+        event_name = "Timer Stopped"
+    else:
+        event_name = "Timer Started" if "start" in str(payload).lower() else "Timer Stopped"
 
-        occurred_at_raw = evt_data.get("occurred_at") or evt_data.get("created_at") or payload.get("occurred_at") or ""
+    # Event timestamp
+    occurred_at_raw = (
+        inner_payload.get("tracking_started_at")
+        or inner_payload.get("tracking_stopped_at")
+        or created_at_root
+        or inner_payload.get("occurred_at")
+        or ""
+    )
 
-        try:
-            event_time = datetime.fromisoformat(str(occurred_at_raw).replace("Z", "+00:00"))
-        except Exception:
-            event_time = datetime.now(timezone.utc)
+    try:
+        event_time = datetime.fromisoformat(str(occurred_at_raw).replace("Z", "+00:00"))
+    except Exception:
+        event_time = datetime.now(timezone.utc)
 
-        # Get local active user from PostgreSQL
-        user_res = await db.execute(select(User).limit(1))
-        db_user = user_res.scalar_one_or_none()
+    # Resolve local active database user
+    user_res = await db.execute(select(User).limit(1))
+    db_user = user_res.scalar_one_or_none()
 
-        if not db_user:
-            db_user = User(
-                id="usr_alex_rivera_01",
-                name="Alex Rivera",
-                first_name="Alex",
-                last_name="Rivera",
-                email="alex.rivera@company.com",
-                time_zone="America/New_York",
+    if not db_user:
+        db_user = User(
+            id="usr_alex_rivera_01",
+            name=user_name_raw or "Alex Rivera",
+            first_name=user_name_raw.split()[0] if user_name_raw else "Alex",
+            last_name=user_name_raw.split()[-1] if len(user_name_raw.split()) > 1 else "Rivera",
+            email="alex.rivera@company.com",
+            time_zone="America/New_York",
+            status="active",
+        )
+        db.add(db_user)
+        await db.flush()
+
+    if evt_id and project_id:
+        # Ensure Project exists in projects table with its actual Hubstaff project name (e.g. "DevSecOps")
+        prj_res = await db.execute(select(Project).where(Project.id == project_id))
+        prj = prj_res.scalar_one_or_none()
+        if not prj:
+            new_prj = Project(
+                id=project_id,
+                organization_id=org_id if org_id else None,
+                name=project_name if project_name else f"Project #{project_id}",
                 status="active",
+                role_type="Unassigned",
             )
-            db.add(db_user)
+            db.add(new_prj)
+            await db.flush()
+        elif project_name and prj.name != project_name:
+            prj.name = project_name
             await db.flush()
 
-        if db_user and evt_id:
-            # Ensure project exists in projects table to satisfy FK constraint
-            prj_res = await db.execute(select(Project).where(Project.id == project_id))
-            if not prj_res.scalar_one_or_none():
-                prj_name = "General / Unassigned Time" if project_id == "0" else f"Project #{project_id}"
-                new_prj = Project(
-                    id=project_id,
-                    organization_id=None,
-                    name=prj_name,
-                    status="active",
-                    role_type="Unassigned",
-                )
-                db.add(new_prj)
-                await db.flush()
+        existing_res = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id))
+        existing_evt = existing_res.scalar_one_or_none()
 
-            existing_res = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id))
-            existing_evt = existing_res.scalar_one_or_none()
+        if existing_evt:
+            existing_evt.project_id = project_id
+            existing_evt.event_name = event_name
+            existing_evt.event_time = event_time
+            logger.info(f"Updated HubstaffEvent {evt_id} -> {event_name} ({project_name})")
+        else:
+            new_evt = HubstaffEvent(
+                id=evt_id,
+                user_id=db_user.id,
+                project_id=project_id,
+                event_name=event_name,
+                event_time=event_time,
+            )
+            db.add(new_evt)
+            logger.info(f"Inserted HubstaffEvent {evt_id} -> {event_name} for project {project_name} (ID: {project_id})")
 
-            if existing_evt:
-                existing_evt.project_id = project_id
-                existing_evt.event_name = event_name
-                existing_evt.event_time = event_time
-                logger.info(f"Updated existing HubstaffEvent {evt_id} -> {event_name}")
-            else:
-                new_evt = HubstaffEvent(
-                    id=evt_id,
-                    user_id=db_user.id,
-                    project_id=project_id,
-                    event_name=event_name,
-                    event_time=event_time,
-                )
-                db.add(new_evt)
-                logger.info(f"Inserted new HubstaffEvent {evt_id} -> {event_name} for project {project_id}")
-
-            await db.commit()
+        await db.commit()
 
     response_headers = {}
     if hook_secret:

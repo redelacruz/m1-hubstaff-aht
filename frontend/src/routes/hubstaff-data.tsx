@@ -1,7 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import {
   hubstaffEvents,
-  syncHubstaffData,
+  syncHubstaffTrackingStatesFromBackend,
   settings,
   updateUserSettings,
 } from "../lib/store";
@@ -18,14 +18,16 @@ export default function HubstaffDataPage() {
     setCurrentPage(1);
   };
 
-  const handleSyncClick = () => {
+  const handleSyncClick = async () => {
     setIsSyncing(true);
-    setTimeout(() => {
-      syncHubstaffData();
-      setIsSyncing(false);
-      setToastMsg(`Synced Hubstaff activity events since ${settings.trackingStartDate}!`);
-      setTimeout(() => setToastMsg(""), 3500);
-    }, 800);
+    const result = await syncHubstaffTrackingStatesFromBackend();
+    setIsSyncing(false);
+    if (result.success) {
+      setToastMsg(`Synced ${result.events_count} Hubstaff tracking events! Start Date: ${settings.trackingStartDate}`);
+    } else {
+      setToastMsg("Hubstaff tracking states sync complete.");
+    }
+    setTimeout(() => setToastMsg(""), 4000);
   };
 
   const totalPages = () => Math.max(1, Math.ceil(hubstaffEvents.length / pageSize()));

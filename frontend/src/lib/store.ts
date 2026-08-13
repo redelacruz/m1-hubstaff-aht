@@ -319,6 +319,37 @@ export const resetAllToDefault = () => {
   saveStateToLocalStorage();
 };
 
+export const syncHubstaffTrackingStatesFromBackend = async (): Promise<{
+  success: boolean;
+  events_count: number;
+  tracking_start_date?: string;
+}> => {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/sync-tracking-states`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.events)) {
+        setHubstaffEvents(data.events);
+      }
+      if (data.tracking_start_date) {
+        updateUserSettings({ trackingStartDate: data.tracking_start_date });
+      }
+      saveStateToLocalStorage();
+      return {
+        success: true,
+        events_count: data.events_count || (data.events ? data.events.length : 0),
+        tracking_start_date: data.tracking_start_date,
+      };
+    }
+  } catch (e) {
+    console.error("Error syncing tracking states from backend:", e);
+  }
+  return { success: false, events_count: 0 };
+};
+
 // API Integration Helpers for Hubstaff Auth & Status
 const getApiBaseUrl = () => {
   if (typeof window !== "undefined") {

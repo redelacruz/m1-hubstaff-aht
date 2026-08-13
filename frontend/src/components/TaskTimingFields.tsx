@@ -24,10 +24,10 @@ export interface TaskTimingFieldsProps {
 }
 
 export function TaskTimingFields(props: TaskTimingFieldsProps) {
-  const handlePasteTimestamp = (e: ClipboardEvent, setter: (val: string) => void) => {
-    const pastedText = e.clipboardData?.getData("text");
+  const handlePasteTimestamp = (e: ClipboardEvent, currentValue: string, setter: (val: string) => void) => {
+    const pastedText = e.clipboardData?.getData("text") || e.clipboardData?.getData("text/plain");
     if (pastedText) {
-      const parsed = parsePastedTimestamp(pastedText);
+      const parsed = parsePastedTimestamp(pastedText, currentValue);
       if (parsed) {
         e.preventDefault();
         setter(parsed);
@@ -79,7 +79,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
                 type="datetime-local"
                 value={props.startDateTime}
                 onClick={(e) => e.currentTarget.showPicker?.()}
-                onPaste={(e) => handlePasteTimestamp(e, props.onStartDateTimeChange)}
+                onPaste={(e) => handlePasteTimestamp(e, props.startDateTime, props.onStartDateTimeChange)}
                 onInput={(e) => props.onStartDateTimeChange(e.currentTarget.value)}
                 class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
               />
@@ -110,7 +110,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
               type="datetime-local"
               value={props.startTime}
               onClick={(e) => e.currentTarget.showPicker?.()}
-              onPaste={(e) => handlePasteTimestamp(e, props.onStartTimeChange)}
+              onPaste={(e) => handlePasteTimestamp(e, props.startTime, props.onStartTimeChange)}
               onInput={(e) => props.onStartTimeChange(e.currentTarget.value)}
               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
             />
@@ -123,7 +123,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
               type="datetime-local"
               value={props.endTime}
               onClick={(e) => e.currentTarget.showPicker?.()}
-              onPaste={(e) => handlePasteTimestamp(e, props.onEndTimeChange)}
+              onPaste={(e) => handlePasteTimestamp(e, props.endTime, props.onEndTimeChange)}
               onInput={(e) => props.onEndTimeChange(e.currentTarget.value)}
               class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
             />

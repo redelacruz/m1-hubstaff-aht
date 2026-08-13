@@ -955,7 +955,7 @@ export const toLocalDateTimeLocalString = (d: Date): string => {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 };
 
-export const parsePastedTimestamp = (rawInput: string): string | null => {
+export const parsePastedTimestamp = (rawInput: string, currentValue?: string): string | null => {
   if (!rawInput || !rawInput.trim()) return null;
   const str = rawInput.trim();
 
@@ -971,13 +971,30 @@ export const parsePastedTimestamp = (rawInput: string): string | null => {
 
   // Try standard Date parsing
   let d = new Date(str);
-  if (isNaN(d.getTime())) {
-    const normalized = str.replace(/-/g, "/");
-    d = new Date(normalized);
-  }
-
   if (!isNaN(d.getTime())) {
     return toLocalDateTimeLocalString(d);
+  }
+  
+  const normalized = str.replace(/-/g, "/");
+  d = new Date(normalized);
+  if (!isNaN(d.getTime())) {
+    return toLocalDateTimeLocalString(d);
+  }
+
+  // Try time-only parsing
+  const timeOnlyTest = new Date(`1970/01/01 ${str}`);
+  if (!isNaN(timeOnlyTest.getTime())) {
+    let baseDate = new Date();
+    if (currentValue) {
+      const cvDate = new Date(currentValue);
+      if (!isNaN(cvDate.getTime())) {
+        baseDate = cvDate;
+      }
+    }
+    baseDate.setHours(timeOnlyTest.getHours());
+    baseDate.setMinutes(timeOnlyTest.getMinutes());
+    baseDate.setSeconds(0);
+    return toLocalDateTimeLocalString(baseDate);
   }
 
   return null;

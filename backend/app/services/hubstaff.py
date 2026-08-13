@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 import httpx
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -220,9 +220,7 @@ async def sync_user_organizations_and_projects(user_id: str, access_token: str, 
     """
     orgs_data = await fetch_user_organizations(access_token)
 
-    # Wipe existing orgs and projects for this user
-    existing_org_ids_subquery = select(Organization.id).where(Organization.user_id == user_id)
-    await db.execute(delete(Project).where(Project.organization_id.in_(existing_org_ids_subquery)))
+    # Wipe existing orgs for this user (projects will cascade delete automatically)
     await db.execute(delete(Organization).where(Organization.user_id == user_id))
     await db.flush()
 
@@ -341,8 +339,155 @@ async def provision_single_user_environment(
         await sync_user_organizations_and_projects(user_id_str, access_token, db)
     except Exception as e:
         logger.warning(f"Could not fetch organizations during PAT provisioning: {e}")
+        await db.rollback()
 
     await db.refresh(new_user)
     await db.refresh(new_credential)
 
     return new_user, new_credential
+
+
+async def fetch_organization_tracking_states(
+    access_token: str,
+    organization_id: str,
+    start_iso: str,
+    stop_iso: str,
+) -> List[Dict[str, Any]]:
+    """
+    Fetches tracking states from GET /v2/organizations/{organization_id}/tracking_states
+    within the specified start and stop ISO 8601 time window.
+    """
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "*/*",
+    }
+    params = {
+        "occurred[start]": start_iso,
+        "occurred[stop]": stop_iso,
+        "include_removed": "true",
+    }
+    url = f"{HUBSTAFF_API_BASE_URL}/v2/organizations/{organization_id}/tracking_states"
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        try:
+            response = await client.get(url, headers=headers, params=params)
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("tracking_states", [])
+            else:
+                logger.warning(
+                    f"Hubstaff API tracking_states error status {response.status_code}: {response.text}"
+                )
+                return []
+        except httpx.RequestError as e:
+            logger.warning(f"Unable to connect to Hubstaff tracking_states API: {e}")
+            return []
+
+
+async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSession) -> Dict[str, Any]:
+    """
+    Queries tracking_states endpoint backward in <= 7-day chunks starting from now
+    down to user's set tracking_start_date (or 6-month retention limit).
+    Saves events to PostgreSQL, and adjusts user's tracking_start_date if a gap is detected.
+    """
+    # 1. Fetch user settings
+    settings_res = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
+    user_settings = settings_res.scalar_one_or_none()
+
+    start_date = user_settings.tracking_start_date if user_settings else datetime.now(timezone.utc).date()
+    start_datetime_utc = datetime.combine(start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+
+    now_utc = datetime.now(timezone.utc)
+    six_months_ago = now_utc - timedelta(days=180)
+    cutoff_datetime = max(start_datetime_utc, six_months_ago)
+
+    # 2. Fetch user's organizations
+    orgs_res = await db.execute(select(Organization).where(Organization.user_id == user_id))
+    orgs = orgs_res.scalars().all()
+
+    # Load project names map for display
+    prjs_res = await db.execute(select(Project))
+    prjs_map = {p.id: p.name for p in prjs_res.scalars().all()}
+
+    synced_event_ids = set()
+
+    for org in orgs:
+        current_stop = now_utc
+        while current_stop > cutoff_datetime:
+            chunk_start = max(current_stop - timedelta(days=7), cutoff_datetime)
+            if chunk_start >= current_stop:
+                break
+
+            # Format ISO strings with Z
+            start_str = chunk_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+            stop_str = current_stop.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            raw_events = await fetch_organization_tracking_states(access_token, org.id, start_str, stop_str)
+
+            for evt in raw_events:
+                evt_id_str = str(evt["id"])
+                prj_id_str = str(evt.get("project_id", ""))
+                evt_type = str(evt.get("type", "start")).lower()
+                event_name = "Timer Started" if evt_type == "start" else "Timer Stopped"
+
+                # Parse occurred_at
+                raw_time = evt.get("occurred_at", "")
+                try:
+                    event_time = datetime.fromisoformat(raw_time.replace("Z", "+00:00"))
+                except Exception:
+                    event_time = datetime.now(timezone.utc)
+
+                # Check if event already exists
+                existing = await db.execute(select(HubstaffEvent).where(HubstaffEvent.id == evt_id_str))
+                if not existing.scalar_one_or_none():
+                    new_evt = HubstaffEvent(
+                        id=evt_id_str,
+                        user_id=user_id,
+                        project_id=prj_id_str,
+                        event_name=event_name,
+                        event_time=event_time,
+                    )
+                    db.add(new_evt)
+                    synced_event_ids.add(evt_id_str)
+
+            await db.flush()
+            current_stop = chunk_start
+
+    await db.commit()
+
+    # 3. Gap adjustment logic: find earliest event_time among all user's events in DB
+    all_events_res = await db.execute(
+        select(HubstaffEvent)
+        .where(HubstaffEvent.user_id == user_id)
+        .order_by(HubstaffEvent.event_time.asc())
+    )
+    all_events = all_events_res.scalars().all()
+
+    updated_start_date = start_date
+    if all_events:
+        earliest_event_date = all_events[0].event_time.date()
+        if earliest_event_date > start_date:
+            updated_start_date = earliest_event_date
+            if user_settings:
+                user_settings.tracking_start_date = updated_start_date
+                await db.commit()
+
+    # Prepare return payload of events
+    events_payload = []
+    for evt in all_events:
+        prj_name = prjs_map.get(evt.project_id, f"Project #{evt.project_id}")
+        events_payload.append({
+            "id": evt.id,
+            "userId": evt.user_id,
+            "eventName": evt.event_name,
+            "eventTime": evt.event_time.isoformat(),
+            "projectId": evt.project_id,
+            "projectName": prj_name,
+        })
+
+    return {
+        "success": True,
+        "tracking_start_date": str(updated_start_date),
+        "events_count": len(events_payload),
+        "events": events_payload,
+    }

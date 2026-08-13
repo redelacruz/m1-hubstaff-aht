@@ -366,9 +366,9 @@ async def fetch_organization_tracking_states(
         "occurred[stop]": stop_iso,
         "include_removed": "true",
     }
-    url = f"{HUBSTAFF_API_BASE_URL}/v2/organizations/{organization_id}/tracking_states"
+    url = f"{HUBSTAFF_API_BASE_URL}/organizations/{organization_id}/tracking_states"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         try:
             response = await client.get(url, headers=headers, params=params)
             if response.status_code == 200:

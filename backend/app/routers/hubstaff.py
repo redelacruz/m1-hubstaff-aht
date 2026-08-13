@@ -1,4 +1,5 @@
 import logging
+from typing import Optional
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from pydantic import BaseModel, Field
@@ -452,3 +453,154 @@ async def disconnect_hubstaff_account(db: AsyncSession = Depends(get_db)):
         "is_locked": False,
         "message": "Hubstaff account disconnected and all user data cleared.",
     }
+
+
+class TaskLogCreateRequest(BaseModel):
+    id: Optional[str] = None
+    role: str
+    subrole: str
+    title: str
+    url: Optional[str] = None
+    notes: Optional[str] = None
+    duration_seconds: int = 0
+    timer_mode: str = "hubstaff"
+    is_manual_entry: bool = False
+    created_at: Optional[str] = None
+
+
+class TaskLogUpdateRequest(BaseModel):
+    role: Optional[str] = None
+    subrole: Optional[str] = None
+    title: Optional[str] = None
+    url: Optional[str] = None
+    notes: Optional[str] = None
+    duration_seconds: Optional[int] = None
+    timer_mode: Optional[str] = None
+    is_manual_entry: Optional[bool] = None
+    created_at: Optional[str] = None
+
+
+@router.get("/tasks")
+async def get_task_logs(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskLog).order_by(TaskLog.created_at.desc()))
+    logs = result.scalars().all()
+    return {
+        "tasks": [
+            {
+                "id": t.id,
+                "userId": t.user_id,
+                "role": t.role,
+                "subrole": t.subrole,
+                "title": t.title,
+                "url": t.url or "",
+                "notes": t.notes or "",
+                "durationSeconds": t.duration_seconds,
+                "timerMode": t.timer_mode,
+                "isManualEntry": t.is_manual_entry,
+                "createdAt": t.created_at.isoformat() if t.created_at else datetime.now(timezone.utc).isoformat(),
+            }
+            for t in logs
+        ]
+    }
+
+
+@router.post("/tasks")
+async def create_task_log(request: TaskLogCreateRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).limit(1))
+    user = result.scalar_one_or_none()
+    if not user:
+        user = User(
+            id="usr_alex_rivera_01",
+            name="Alex Rivera",
+            first_name="Alex",
+            last_name="Rivera",
+            email="alex.rivera@company.com",
+            time_zone="America/New_York",
+            status="active",
+        )
+        db.add(user)
+        await db.flush()
+
+    task_id = request.id or f"task_{int(datetime.now().timestamp()*1000)}"
+    
+    created_dt = datetime.now(timezone.utc)
+    if request.created_at:
+        try:
+            created_dt = datetime.fromisoformat(request.created_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    task = TaskLog(
+        id=task_id,
+        user_id=user.id,
+        role=request.role,
+        subrole=request.subrole,
+        title=request.title,
+        url=request.url,
+        notes=request.notes,
+        duration_seconds=request.duration_seconds,
+        timer_mode=request.timer_mode,
+        is_manual_entry=request.is_manual_entry,
+        created_at=created_dt,
+    )
+    db.add(task)
+    await db.commit()
+    return {
+        "success": True,
+        "task": {
+            "id": task.id,
+            "userId": task.user_id,
+            "role": task.role,
+            "subrole": task.subrole,
+            "title": task.title,
+            "url": task.url or "",
+            "notes": task.notes or "",
+            "durationSeconds": task.duration_seconds,
+            "timerMode": task.timer_mode,
+            "isManualEntry": task.is_manual_entry,
+            "createdAt": task.created_at.isoformat(),
+        },
+    }
+
+
+@router.put("/tasks/{task_id}")
+async def update_task_log_endpoint(task_id: str, request: TaskLogUpdateRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskLog).where(TaskLog.id == task_id))
+    task = result.scalar_one_or_none()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task log entry not found.")
+
+    if request.role is not None:
+        task.role = request.role
+    if request.subrole is not None:
+        task.subrole = request.subrole
+    if request.title is not None:
+        task.title = request.title
+    if request.url is not None:
+        task.url = request.url
+    if request.notes is not None:
+        task.notes = request.notes
+    if request.duration_seconds is not None:
+        task.duration_seconds = request.duration_seconds
+    if request.timer_mode is not None:
+        task.timer_mode = request.timer_mode
+    if request.is_manual_entry is not None:
+        task.is_manual_entry = request.is_manual_entry
+    if request.created_at:
+        try:
+            task.created_at = datetime.fromisoformat(request.created_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    await db.commit()
+    return {"success": True, "message": "Task log updated."}
+
+
+@router.delete("/tasks/{task_id}")
+async def delete_task_log_endpoint(task_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(TaskLog).where(TaskLog.id == task_id))
+    task = result.scalar_one_or_none()
+    if task:
+        await db.delete(task)
+        await db.commit()
+    return {"success": True, "message": "Task log deleted."}

@@ -82,6 +82,11 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) NOT NULL DEFAULT 'active';"
             )
         )
+        await conn.execute(
+            text(
+                "ALTER TABLE task_logs ADD COLUMN IF NOT EXISTS is_manual_entry BOOLEAN DEFAULT FALSE;"
+            )
+        )
 
     # Start 12-hour background reconciliation loop task
     task = asyncio.create_task(start_periodic_reconciliation_task())

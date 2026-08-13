@@ -274,6 +274,77 @@ export const addTaskLog = (
 
   setTasks((prev: TaskLogEntry[]) => [newTask, ...prev]);
   saveStateToLocalStorage();
+  saveTaskToBackend(newTask);
+};
+
+export const fetchTaskLogsFromBackend = async () => {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/tasks`);
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data.tasks)) {
+        setTasks(data.tasks);
+        saveStateToLocalStorage();
+      }
+    }
+  } catch (e) {
+    console.warn("Could not fetch tasks from backend DB:", e);
+  }
+};
+
+export const saveTaskToBackend = async (task: TaskLogEntry) => {
+  try {
+    await fetch(`${getApiBaseUrl()}/api/hubstaff/tasks`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: task.id,
+        role: task.role,
+        subrole: task.subrole,
+        title: task.title,
+        url: task.url,
+        notes: task.notes,
+        duration_seconds: task.durationSeconds,
+        timer_mode: task.timerMode,
+        is_manual_entry: task.isManualEntry ?? false,
+        created_at: task.createdAt,
+      }),
+    });
+  } catch (e) {
+    console.warn("Could not save task to backend DB:", e);
+  }
+};
+
+export const updateTaskInBackend = async (id: string, fields: Partial<TaskLogEntry>) => {
+  try {
+    await fetch(`${getApiBaseUrl()}/api/hubstaff/tasks/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role: fields.role,
+        subrole: fields.subrole,
+        title: fields.title,
+        url: fields.url,
+        notes: fields.notes,
+        duration_seconds: fields.durationSeconds,
+        timer_mode: fields.timerMode,
+        is_manual_entry: fields.isManualEntry,
+        created_at: fields.createdAt,
+      }),
+    });
+  } catch (e) {
+    console.warn("Could not update task in backend DB:", e);
+  }
+};
+
+export const deleteTaskFromBackend = async (id: string) => {
+  try {
+    await fetch(`${getApiBaseUrl()}/api/hubstaff/tasks/${id}`, {
+      method: "DELETE",
+    });
+  } catch (e) {
+    console.warn("Could not delete task from backend DB:", e);
+  }
 };
 
 export interface AddManualTaskParams {
@@ -373,6 +444,7 @@ export const addManualTaskLog = (params: AddManualTaskParams): { task: TaskLogEn
 
   setTasks((prev: TaskLogEntry[]) => [newTask, ...prev]);
   saveStateToLocalStorage();
+  saveTaskToBackend(newTask);
 
   return { task: newTask, message };
 };
@@ -382,11 +454,13 @@ export const updateTaskLog = (id: string, updatedFields: Partial<TaskLogEntry>) 
     prev.map((t: TaskLogEntry) => (t.id === id ? { ...t, ...updatedFields } : t))
   );
   saveStateToLocalStorage();
+  updateTaskInBackend(id, updatedFields);
 };
 
 export const deleteTaskLog = (id: string) => {
   setTasks((prev: TaskLogEntry[]) => prev.filter((t: TaskLogEntry) => t.id !== id));
   saveStateToLocalStorage();
+  deleteTaskFromBackend(id);
 };
 
 export const syncHubstaffData = () => {
@@ -512,6 +586,8 @@ export const fetchHubstaffStatusFromBackend = async () => {
           },
         });
       }
+
+      await fetchTaskLogsFromBackend();
     }
   } catch (e) {
     console.warn("Could not fetch backend Hubstaff status:", e);

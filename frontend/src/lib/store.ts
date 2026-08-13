@@ -87,6 +87,16 @@ export interface WebhookStatusInfo {
   updated_at?: string | null;
 }
 
+export interface HubstaffTimeAdjustment {
+  id: string;
+  userId: string;
+  role: Role;
+  adjustmentType: "addition" | "deletion";
+  amountSeconds: number;
+  reason: string;
+  createdAt: string;
+}
+
 export interface HubstaffAuthStatus {
   isConnected: boolean;
   isLocked: boolean;
@@ -153,6 +163,7 @@ export const [settings, setSettings] = createStore<UserSettings>(initialState.se
 export const [tasks, setTasks] = createStore<TaskLogEntry[]>(initialState.tasks);
 export const [hubstaffEvents, setHubstaffEvents] = createStore<HubstaffEvent[]>(initialState.hubstaffEvents);
 export const [hubstaffTime, setHubstaffTime] = createStore<HubstaffTimeRecord>(initialState.hubstaffTime);
+export const [timeAdjustments, setTimeAdjustments] = createStore<HubstaffTimeAdjustment[]>([]);
 
 export const [hubstaffStatus, setHubstaffStatus] = createSignal<HubstaffAuthStatus>({
   isConnected: true,
@@ -160,7 +171,6 @@ export const [hubstaffStatus, setHubstaffStatus] = createSignal<HubstaffAuthStat
   user: DEFAULT_USER,
 });
 
-export const [activeTimerSeconds, setActiveTimerSeconds] = createSignal<number>(435);
 
 export const saveStateToLocalStorage = () => {
   if (typeof window === "undefined") return;
@@ -364,6 +374,102 @@ export const deleteTaskFromBackend = async (id: string) => {
     });
   } catch (e) {
     console.warn("Could not delete task from backend DB:", e);
+  }
+};
+
+export const fetchTimeAdjustmentsFromBackend = async () => {
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/time-adjustments`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && Array.isArray(data.adjustments)) {
+        setTimeAdjustments(data.adjustments);
+      }
+    }
+  } catch (e) {
+    console.warn("Could not fetch time adjustments from backend DB:", e);
+  }
+};
+
+export const addTimeAdjustment = async (data: {
+  role: Role;
+  adjustmentType: "addition" | "deletion";
+  amountSeconds: number;
+  reason: string;
+  createdAt?: string;
+}) => {
+  const newAdj: HubstaffTimeAdjustment = {
+    id: `adj_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+    userId: hubstaffStatus().user?.id || DEFAULT_USER.id,
+    role: data.role,
+    adjustmentType: data.adjustmentType,
+    amountSeconds: data.amountSeconds,
+    reason: data.reason,
+    createdAt: data.createdAt || new Date().toISOString(),
+  };
+
+  setTimeAdjustments((prev) => [newAdj, ...prev]);
+
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/time-adjustments`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: newAdj.id,
+        role: newAdj.role,
+        adjustment_type: newAdj.adjustmentType,
+        amount_seconds: newAdj.amountSeconds,
+        reason: newAdj.reason,
+        created_at: newAdj.createdAt,
+      }),
+    });
+    if (res.ok) {
+      const respData = await res.json();
+      if (respData && respData.adjustment) {
+        setTimeAdjustments((prev) =>
+          prev.map((a) => (a.id === newAdj.id ? respData.adjustment : a))
+        );
+      }
+    }
+  } catch (e) {
+    console.warn("Could not save time adjustment to backend DB:", e);
+  }
+};
+
+export const updateTimeAdjustment = async (
+  id: string,
+  fields: Partial<HubstaffTimeAdjustment>
+) => {
+  setTimeAdjustments((prev) =>
+    prev.map((a) => (a.id === id ? { ...a, ...fields } : a))
+  );
+
+  try {
+    await fetch(`${getApiBaseUrl()}/api/hubstaff/time-adjustments/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        role: fields.role,
+        adjustment_type: fields.adjustmentType,
+        amount_seconds: fields.amountSeconds,
+        reason: fields.reason,
+        created_at: fields.createdAt,
+      }),
+    });
+  } catch (e) {
+    console.warn("Could not update time adjustment in backend DB:", e);
+  }
+};
+
+export const deleteTimeAdjustment = async (id: string) => {
+  setTimeAdjustments((prev) => prev.filter((a) => a.id !== id));
+
+  try {
+    await fetch(`${getApiBaseUrl()}/api/hubstaff/time-adjustments/${id}`, {
+      method: "DELETE",
+    });
+  } catch (e) {
+    console.warn("Could not delete time adjustment from backend DB:", e);
   }
 };
 
@@ -610,6 +716,7 @@ export const fetchHubstaffStatusFromBackend = async () => {
       }
 
       await fetchTaskLogsFromBackend();
+      await fetchTimeAdjustmentsFromBackend();
     }
   } catch (e) {
     console.warn("Could not fetch backend Hubstaff status:", e);
@@ -748,8 +855,8 @@ export const getFilteredTasks = (
   });
 };
 
-export const getEventRole = (evt: HubstaffEvent): Role => {
-  const name = (evt.projectName || "").toLowerCase();
+export const parseRoleFromProjectName = (projectName?: string): Role => {
+  const name = (projectName || "").toLowerCase();
   if (name.includes("trainer") || name.includes("training")) {
     return "Trainer";
   }
@@ -757,6 +864,10 @@ export const getEventRole = (evt: HubstaffEvent): Role => {
     return "Reviewer";
   }
   return settings.defaultRole || "Reviewer";
+};
+
+export const getEventRole = (evt: HubstaffEvent): Role => {
+  return parseRoleFromProjectName(evt.projectName);
 };
 
 export interface HubstaffBilledCalculation {
@@ -775,8 +886,21 @@ export const calculateHubstaffBilledSecondsFromEvents = (
     return getEventRole(evt) === roleFilter;
   });
 
+  // Calculate net time adjustments for role
+  let netAdjustmentSeconds = 0;
+  const adjs = timeAdjustments || [];
+  for (const adj of adjs) {
+    if (roleFilter === "All" || adj.role === roleFilter) {
+      if (adj.adjustmentType === "addition") {
+        netAdjustmentSeconds += adj.amountSeconds;
+      } else if (adj.adjustmentType === "deletion") {
+        netAdjustmentSeconds -= adj.amountSeconds;
+      }
+    }
+  }
+
   if (filteredEvents.length === 0) {
-    return { totalSeconds: 0, activeTimer: false };
+    return { totalSeconds: Math.max(0, netAdjustmentSeconds), activeTimer: false };
   }
 
   // Sort events chronologically (oldest first)
@@ -824,6 +948,8 @@ export const calculateHubstaffBilledSecondsFromEvents = (
       totalSeconds += Math.max(0, Math.round((nowMs - activeStartMs) / 1000));
     }
   }
+
+  totalSeconds = Math.max(0, totalSeconds + netAdjustmentSeconds);
 
   return {
     totalSeconds,

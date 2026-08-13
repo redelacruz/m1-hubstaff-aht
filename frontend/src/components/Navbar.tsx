@@ -90,6 +90,17 @@ export function Navbar() {
             </a>
 
             <a
+              href="/time-adjustments"
+              class={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
+                isActive("/time-adjustments")
+                  ? "bg-sky-600 text-white shadow-md shadow-sky-950"
+                  : "text-slate-300 hover:text-white hover:bg-slate-800/60"
+              }`}
+            >
+              Time Adjustments
+            </a>
+
+            <a
               href="/settings"
               class={`px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg text-xs sm:text-sm font-medium transition-all ${
                 isActive("/settings")

@@ -44,6 +44,9 @@ class User(Base):
     task_logs: Mapped[list["TaskLog"]] = relationship(
         "TaskLog", back_populates="user", cascade="all, delete-orphan"
     )
+    time_adjustments: Mapped[list["HubstaffTimeAdjustment"]] = relationship(
+        "HubstaffTimeAdjustment", back_populates="user", cascade="all, delete-orphan"
+    )
     settings: Mapped[Optional["UserSettings"]] = relationship(
         "UserSettings", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
@@ -221,5 +224,28 @@ class WebhookSubscription(Base):
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
-    # Relationship
+    # Relationships
     user: Mapped["User"] = relationship("User")
+
+
+class HubstaffTimeAdjustment(Base):
+    __tablename__ = "hubstaff_time_adjustments"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)  # 'Trainer' or 'Reviewer'
+    adjustment_type: Mapped[str] = mapped_column(String(20), nullable=False)  # 'addition' or 'deletion'
+    amount_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationship
+    user: Mapped["User"] = relationship("User", back_populates="time_adjustments")
+

@@ -17,6 +17,7 @@ from app.models import (
     Organization,
     Project,
     WebhookSubscription,
+    HubstaffTimeAdjustment,
 )
 from app.services.hubstaff import (
     exchange_pat_for_tokens,
@@ -675,3 +676,117 @@ async def get_tasks_by_title(title: str, db: AsyncSession = Depends(get_db)):
             for t in logs
         ],
     }
+
+
+class TimeAdjustmentCreateRequest(BaseModel):
+    id: Optional[str] = None
+    role: str = Field(..., description="'Trainer' or 'Reviewer'")
+    adjustment_type: str = Field(..., description="'addition' or 'deletion'")
+    amount_seconds: int = Field(..., ge=0, description="Duration in seconds")
+    reason: str = Field(..., description="Reason for adjustment")
+    created_at: Optional[str] = None
+
+
+class TimeAdjustmentUpdateRequest(BaseModel):
+    role: Optional[str] = None
+    adjustment_type: Optional[str] = None
+    amount_seconds: Optional[int] = None
+    reason: Optional[str] = None
+    created_at: Optional[str] = None
+
+
+@router.get("/time-adjustments")
+async def get_time_adjustments(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(HubstaffTimeAdjustment).order_by(HubstaffTimeAdjustment.created_at.desc()))
+    adjustments = result.scalars().all()
+    return {
+        "adjustments": [
+            {
+                "id": a.id,
+                "userId": a.user_id,
+                "role": a.role,
+                "adjustmentType": a.adjustment_type,
+                "amountSeconds": a.amount_seconds,
+                "reason": a.reason,
+                "createdAt": a.created_at.isoformat() if a.created_at else datetime.now(timezone.utc).isoformat(),
+            }
+            for a in adjustments
+        ]
+    }
+
+
+@router.post("/time-adjustments")
+async def create_time_adjustment(request: TimeAdjustmentCreateRequest, db: AsyncSession = Depends(get_db)):
+    user_res = await db.execute(select(User).limit(1))
+    user = user_res.scalar_one_or_none()
+    user_id = user.id if user else "usr_alex_rivera_01"
+
+    adj_id = request.id or f"adj_{int(datetime.now(timezone.utc).timestamp()*1000)}"
+
+    created_dt = datetime.now(timezone.utc)
+    if request.created_at:
+        try:
+            created_dt = datetime.fromisoformat(request.created_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    new_adj = HubstaffTimeAdjustment(
+        id=adj_id,
+        user_id=user_id,
+        role=request.role,
+        adjustment_type=request.adjustment_type,
+        amount_seconds=request.amount_seconds,
+        reason=request.reason,
+        created_at=created_dt,
+    )
+    db.add(new_adj)
+    await db.commit()
+
+    return {
+        "success": True,
+        "adjustment": {
+            "id": new_adj.id,
+            "userId": new_adj.user_id,
+            "role": new_adj.role,
+            "adjustmentType": new_adj.adjustment_type,
+            "amountSeconds": new_adj.amount_seconds,
+            "reason": new_adj.reason,
+            "createdAt": new_adj.created_at.isoformat(),
+        },
+    }
+
+
+@router.put("/time-adjustments/{adj_id}")
+async def update_time_adjustment(adj_id: str, request: TimeAdjustmentUpdateRequest, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(HubstaffTimeAdjustment).where(HubstaffTimeAdjustment.id == adj_id))
+    adj = result.scalar_one_or_none()
+    if not adj:
+        raise HTTPException(status_code=404, detail="Time adjustment not found.")
+
+    if request.role is not None:
+        adj.role = request.role
+    if request.adjustment_type is not None:
+        adj.adjustment_type = request.adjustment_type
+    if request.amount_seconds is not None:
+        adj.amount_seconds = request.amount_seconds
+    if request.reason is not None:
+        adj.reason = request.reason
+    if request.created_at is not None:
+        try:
+            adj.created_at = datetime.fromisoformat(request.created_at.replace("Z", "+00:00"))
+        except Exception:
+            pass
+
+    await db.commit()
+    return {"success": True, "message": "Time adjustment updated."}
+
+
+@router.delete("/time-adjustments/{adj_id}")
+async def delete_time_adjustment_endpoint(adj_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(HubstaffTimeAdjustment).where(HubstaffTimeAdjustment.id == adj_id))
+    adj = result.scalar_one_or_none()
+    if adj:
+        await db.delete(adj)
+        await db.commit()
+    return {"success": True, "message": "Time adjustment deleted."}
+

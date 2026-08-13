@@ -99,6 +99,20 @@ async def lifespan(app: FastAPI):
         )
         await conn.execute(
             text(
+                "CREATE TABLE IF NOT EXISTS hubstaff_time_adjustments ("
+                "id VARCHAR(50) PRIMARY KEY, "
+                "user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                "role VARCHAR(20) NOT NULL, "
+                "adjustment_type VARCHAR(20) NOT NULL, "
+                "amount_seconds INTEGER NOT NULL DEFAULT 0, "
+                "reason TEXT NOT NULL, "
+                "created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, "
+                "updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"
+                ");"
+            )
+        )
+        await conn.execute(
+            text(
                 "CREATE INDEX IF NOT EXISTS ix_task_logs_title ON task_logs (title);"
             )
         )

@@ -1,5 +1,12 @@
 import { createSignal, createEffect, For, Show } from "solid-js";
-import { Role, Subrole, SUBROLES_BY_ROLE, TaskLogEntry } from "../lib/store";
+import {
+  Role,
+  Subrole,
+  SUBROLES_BY_ROLE,
+  TaskLogEntry,
+  parsePastedTimestamp,
+  toLocalDateTimeLocalString,
+} from "../lib/store";
 
 interface EditTaskModalProps {
   task: TaskLogEntry | null;
@@ -15,18 +22,13 @@ export function EditTaskModal(props: EditTaskModalProps) {
   const [url, setUrl] = createSignal<string>("");
   const [notes, setNotes] = createSignal<string>("");
 
-  // Date & Timing edit controls
-  const [taskDate, setTaskDate] = createSignal<string>("");
+  // Timing edit signals (only for manually added entries)
+  const [timingMode, setTimingMode] = createSignal<"timestamps" | "duration">("duration");
+  const [startTime, setStartTime] = createSignal<string>("");
+  const [endTime, setEndTime] = createSignal<string>("");
+  const [startDateTime, setStartDateTime] = createSignal<string>("");
   const [durationMins, setDurationMins] = createSignal<number>(0);
   const [timerMode, setTimerMode] = createSignal<"hubstaff" | "untracked">("hubstaff");
-
-  const toLocalDate = (isoStr?: string) => {
-    if (!isoStr) return "";
-    const d = new Date(isoStr);
-    if (isNaN(d.getTime())) return "";
-    const pad = (n: number) => n.toString().padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  };
 
   createEffect(() => {
     if (props.task) {
@@ -35,9 +37,19 @@ export function EditTaskModal(props: EditTaskModalProps) {
       setTitle(props.task.title);
       setUrl(props.task.url || "");
       setNotes(props.task.notes || "");
-      setTaskDate(toLocalDate(props.task.createdAt));
-      setDurationMins(Math.round((props.task.durationSeconds || 0) / 60));
       setTimerMode(props.task.timerMode);
+
+      const createdDt = new Date(props.task.createdAt);
+      if (!isNaN(createdDt.getTime())) {
+        const startStr = toLocalDateTimeLocalString(createdDt);
+        const endDt = new Date(createdDt.getTime() + (props.task.durationSeconds || 0) * 1000);
+        const endStr = toLocalDateTimeLocalString(endDt);
+
+        setStartTime(startStr);
+        setEndTime(endStr);
+        setStartDateTime(startStr);
+      }
+      setDurationMins(Math.round((props.task.durationSeconds || 0) / 60));
     }
   });
 
@@ -48,6 +60,17 @@ export function EditTaskModal(props: EditTaskModalProps) {
       setSubrole(availableSubroles[0]);
     }
   });
+
+  const handlePasteTimestamp = (e: ClipboardEvent, setter: (val: string) => void) => {
+    const pastedText = e.clipboardData?.getData("text");
+    if (pastedText) {
+      const parsed = parsePastedTimestamp(pastedText);
+      if (parsed) {
+        e.preventDefault();
+        setter(parsed);
+      }
+    }
+  };
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
@@ -63,24 +86,33 @@ export function EditTaskModal(props: EditTaskModalProps) {
       title: title().trim(),
       url: url().trim(),
       notes: notes().trim(),
-      timerMode: timerMode(),
     };
 
-    // Update Date if changed
-    if (taskDate()) {
-      const [y, m, d] = taskDate().split("-").map(Number);
-      if (y && m && d) {
-        const origDate = new Date(props.task.createdAt);
-        const newDt = new Date(y, m - 1, d, origDate.getHours(), origDate.getMinutes(), origDate.getSeconds());
-        updatedFields.createdAt = newDt.toISOString();
-      }
-    }
+    // Apply timing updates strictly if task was manually entered
+    if (props.task.isManualEntry) {
+      updatedFields.timerMode = timerMode();
 
-    // Update Duration if adjusted
-    if (timerMode() === "untracked") {
-      updatedFields.durationSeconds = 0;
-    } else {
-      updatedFields.durationSeconds = Math.max(0, durationMins() * 60);
+      if (timerMode() === "untracked") {
+        updatedFields.durationSeconds = 0;
+      } else if (timingMode() === "timestamps") {
+        if (startTime() && endTime()) {
+          const startMs = new Date(startTime()).getTime();
+          const endMs = new Date(endTime()).getTime();
+          if (endMs > startMs) {
+            updatedFields.createdAt = new Date(startTime()).toISOString();
+            updatedFields.durationSeconds = Math.round((endMs - startMs) / 1000);
+          }
+        }
+      } else {
+        // Start Date/Time & Duration Mode
+        if (startDateTime()) {
+          const startDt = new Date(startDateTime());
+          if (!isNaN(startDt.getTime())) {
+            updatedFields.createdAt = startDt.toISOString();
+            updatedFields.durationSeconds = Math.max(0, durationMins() * 60);
+          }
+        }
+      }
     }
 
     props.onSave(props.task.id, updatedFields);
@@ -108,7 +140,7 @@ export function EditTaskModal(props: EditTaskModalProps) {
                 </Show>
               </div>
               <p class="text-xs text-slate-400 mt-0.5">
-                Modify role, task info, completion date, and duration.
+                Modify role, task metadata, and manual entry timing.
               </p>
             </div>
             <button
@@ -155,53 +187,117 @@ export function EditTaskModal(props: EditTaskModalProps) {
               </div>
             </div>
 
-            {/* Date & Timing Adjustments */}
-            <div class="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-              <span class="block text-xs font-bold uppercase tracking-wider text-slate-300">
-                Date & Timing Adjustments
-              </span>
-
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label class="block text-xs text-slate-400 mb-1">
-                    Task Date (YYYY-MM-DD)
-                  </label>
-                  <input
-                    type="date"
-                    value={taskDate()}
-                    onInput={(e) => setTaskDate(e.currentTarget.value)}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
-                  />
+            {/* Manual-Only Timing Adjustments */}
+            <Show when={props.task?.isManualEntry}>
+              <div class="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
+                <div class="flex items-center justify-between">
+                  <span class="block text-xs font-bold uppercase tracking-wider text-slate-300">
+                    Date & Timing Adjustments
+                  </span>
+                  <div class="flex items-center space-x-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setTimingMode("timestamps")}
+                      class={`px-2.5 py-1 rounded-lg transition-all ${
+                        timingMode() === "timestamps"
+                          ? "bg-sky-600 text-white font-medium"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Start & End Time
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTimingMode("duration")}
+                      class={`px-2.5 py-1 rounded-lg transition-all ${
+                        timingMode() === "duration"
+                          ? "bg-sky-600 text-white font-medium"
+                          : "text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      Start Date/Time & Duration
+                    </button>
+                  </div>
                 </div>
 
-                <div>
-                  <label class="block text-xs text-slate-400 mb-1">
-                    Duration (Minutes)
+                <Show
+                  when={timingMode() === "timestamps"}
+                  fallback={
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <label class="block text-xs text-slate-400 mb-1">
+                          Start Date & Time (Paste supported)
+                        </label>
+                        <input
+                          type="datetime-local"
+                          value={startDateTime()}
+                          onClick={(e) => e.currentTarget.showPicker?.()}
+                          onPaste={(e) => handlePasteTimestamp(e, setStartDateTime)}
+                          onInput={(e) => setStartDateTime(e.currentTarget.value)}
+                          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
+                        />
+                      </div>
+
+                      <div>
+                        <label class="block text-xs text-slate-400 mb-1">
+                          Duration (Minutes)
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          max="480"
+                          disabled={timerMode() === "untracked"}
+                          value={durationMins()}
+                          onInput={(e) => setDurationMins(parseInt(e.currentTarget.value) || 0)}
+                          class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-mono disabled:opacity-40"
+                        />
+                      </div>
+                    </div>
+                  }
+                >
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label class="block text-xs text-slate-400 mb-1">
+                        Start Time (Paste supported)
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={startTime()}
+                        onClick={(e) => e.currentTarget.showPicker?.()}
+                        onPaste={(e) => handlePasteTimestamp(e, setStartTime)}
+                        onInput={(e) => setStartTime(e.currentTarget.value)}
+                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-slate-400 mb-1">
+                        End Time (Paste supported)
+                      </label>
+                      <input
+                        type="datetime-local"
+                        value={endTime()}
+                        onClick={(e) => e.currentTarget.showPicker?.()}
+                        onPaste={(e) => handlePasteTimestamp(e, setEndTime)}
+                        onInput={(e) => setEndTime(e.currentTarget.value)}
+                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </Show>
+
+                <div class="flex items-center space-x-2 pt-1 text-xs">
+                  <label class="flex items-center space-x-2 text-slate-400 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={timerMode() === "untracked"}
+                      onChange={(e) => setTimerMode(e.currentTarget.checked ? "untracked" : "hubstaff")}
+                      class="w-4 h-4 text-sky-500 rounded bg-slate-900 border-slate-700"
+                    />
+                    <span>Mark as Untracked Task (Duration = 0m)</span>
                   </label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="480"
-                    disabled={timerMode() === "untracked"}
-                    value={durationMins()}
-                    onInput={(e) => setDurationMins(parseInt(e.currentTarget.value) || 0)}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-mono disabled:opacity-40"
-                  />
                 </div>
               </div>
-
-              <div class="flex items-center space-x-2 pt-1 text-xs">
-                <label class="flex items-center space-x-2 text-slate-400 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={timerMode() === "untracked"}
-                    onChange={(e) => setTimerMode(e.currentTarget.checked ? "untracked" : "hubstaff")}
-                    class="w-4 h-4 text-sky-500 rounded bg-slate-900 border-slate-700"
-                  />
-                  <span>Mark as Untracked Task (Duration = 0m)</span>
-                </label>
-              </div>
-            </div>
+            </Show>
 
             {/* Task Title */}
             <div>

@@ -949,3 +949,36 @@ export const getEffectiveUserRole = (): Role => {
   }
   return settings.defaultRole || "Reviewer";
 };
+
+export const toLocalDateTimeLocalString = (d: Date): string => {
+  const pad = (n: number) => n.toString().padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+export const parsePastedTimestamp = (rawInput: string): string | null => {
+  if (!rawInput || !rawInput.trim()) return null;
+  const str = rawInput.trim();
+
+  // Handle Unix timestamp (numeric digits)
+  if (/^\d{9,13}$/.test(str)) {
+    const num = parseInt(str, 10);
+    const ms = str.length === 10 ? num * 1000 : num;
+    const d = new Date(ms);
+    if (!isNaN(d.getTime())) {
+      return toLocalDateTimeLocalString(d);
+    }
+  }
+
+  // Try standard Date parsing
+  let d = new Date(str);
+  if (isNaN(d.getTime())) {
+    const normalized = str.replace(/-/g, "/");
+    d = new Date(normalized);
+  }
+
+  if (!isNaN(d.getTime())) {
+    return toLocalDateTimeLocalString(d);
+  }
+
+  return null;
+};

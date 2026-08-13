@@ -1,5 +1,11 @@
 import { createSignal, createEffect, For, Show } from "solid-js";
-import { Role, Subrole, SUBROLES_BY_ROLE, settings } from "../lib/store";
+import {
+  Role,
+  Subrole,
+  SUBROLES_BY_ROLE,
+  getEffectiveUserRole,
+  parsePastedTimestamp,
+} from "../lib/store";
 
 interface AddManualTaskModalProps {
   isOpen: boolean;
@@ -19,35 +25,44 @@ interface AddManualTaskModalProps {
 }
 
 export function AddManualTaskModal(props: AddManualTaskModalProps) {
-  const [role, setRole] = createSignal<Role>(settings.defaultRole || "Reviewer");
-  const [subrole, setSubrole] = createSignal<Subrole>(
-    SUBROLES_BY_ROLE[settings.defaultRole || "Reviewer"][0]
-  );
+  const [role, setRole] = createSignal<Role>("Trainer");
+  const [subrole, setSubrole] = createSignal<Subrole>("Audio Evaluation");
   const [title, setTitle] = createSignal<string>("");
   const [url, setUrl] = createSignal<string>("");
   const [notes, setNotes] = createSignal<string>("");
+  const [isUntracked, setIsUntracked] = createSignal<boolean>(false);
 
+  // Timing Mode: 'timestamps' or 'duration'
   const [timingMode, setTimingMode] = createSignal<"timestamps" | "duration">("timestamps");
+  const [startTime, setStartTime] = createSignal<string>("");
+  const [endTime, setEndTime] = createSignal<string>("");
   
-  // Date & Time inputs
-  const now = new Date();
-  const thirtyMinsAgo = new Date(now.getTime() - 30 * 60 * 1000);
-  
-  const toLocalISO = (d: Date) => {
+  // Date & Duration Mode now uses Start Date & Time
+  const [startDateTime, setStartDateTime] = createSignal<string>("");
+  const [durationMins, setDurationMins] = createSignal<number>(15);
+
+  const formatLocalDateTimeLocal = (d: Date) => {
     const pad = (n: number) => n.toString().padStart(2, "0");
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
   };
 
-  const toLocalDate = (d: Date) => {
-    const pad = (n: number) => n.toString().padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-  };
+  createEffect(() => {
+    if (props.isOpen) {
+      const now = new Date();
+      const defaultStart = new Date(now.getTime() - 15 * 60 * 1000);
+      setStartTime(formatLocalDateTimeLocal(defaultStart));
+      setEndTime(formatLocalDateTimeLocal(now));
+      setStartDateTime(formatLocalDateTimeLocal(defaultStart));
 
-  const [startTime, setStartTime] = createSignal<string>(toLocalISO(thirtyMinsAgo));
-  const [endTime, setEndTime] = createSignal<string>(toLocalISO(now));
-  const [taskDate, setTaskDate] = createSignal<string>(toLocalDate(now));
-  const [durationMins, setDurationMins] = createSignal<number>(30);
-  const [isUntracked, setIsUntracked] = createSignal<boolean>(false);
+      const effRole = getEffectiveUserRole();
+      setRole(effRole);
+      setSubrole(SUBROLES_BY_ROLE[effRole][0]);
+      setTitle("");
+      setUrl("");
+      setNotes("");
+      setIsUntracked(false);
+    }
+  });
 
   createEffect(() => {
     const currentRole = role();
@@ -57,6 +72,17 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
     }
   });
 
+  const handlePasteTimestamp = (e: ClipboardEvent, setter: (val: string) => void) => {
+    const pastedText = e.clipboardData?.getData("text");
+    if (pastedText) {
+      const parsed = parsePastedTimestamp(pastedText);
+      if (parsed) {
+        e.preventDefault();
+        setter(parsed);
+      }
+    }
+  };
+
   const handleSubmit = (e: Event) => {
     e.preventDefault();
     if (!title().trim()) {
@@ -65,46 +91,59 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
     }
 
     if (timingMode() === "timestamps") {
-      const start = new Date(startTime()).getTime();
-      const end = new Date(endTime()).getTime();
-      if (isNaN(start) || isNaN(end)) {
-        alert("Please provide valid start and end timestamps.");
+      if (!startTime() || !endTime()) {
+        alert("Please specify both Start Time and End Time.");
         return;
       }
-      if (end <= start) {
-        alert("End time must be after start time.");
+      if (new Date(startTime()).getTime() >= new Date(endTime()).getTime()) {
+        alert("Start time must be before end time.");
         return;
       }
+
+      props.onAdd({
+        role: role(),
+        subrole: subrole(),
+        title: title().trim(),
+        url: url().trim(),
+        notes: notes().trim(),
+        startTime: new Date(startTime()).toISOString(),
+        endTime: new Date(endTime()).toISOString(),
+        isUntracked: isUntracked(),
+      });
     } else {
-      if (durationMins() <= 0) {
-        alert("Please specify a duration greater than 0 minutes.");
-        return;
+      // Start Date/Time & Duration Mode
+      let startIso: string | undefined = undefined;
+      let endIso: string | undefined = undefined;
+
+      if (startDateTime()) {
+        const startDt = new Date(startDateTime());
+        if (!isNaN(startDt.getTime())) {
+          startIso = startDt.toISOString();
+          const endDt = new Date(startDt.getTime() + durationMins() * 60 * 1000);
+          endIso = endDt.toISOString();
+        }
       }
+
+      props.onAdd({
+        role: role(),
+        subrole: subrole(),
+        title: title().trim(),
+        url: url().trim(),
+        notes: notes().trim(),
+        startTime: startIso,
+        endTime: endIso,
+        durationMinutes: durationMins(),
+        isUntracked: isUntracked(),
+      });
     }
 
-    props.onAdd({
-      role: role(),
-      subrole: subrole(),
-      title: title().trim(),
-      url: url().trim(),
-      notes: notes().trim(),
-      startTime: timingMode() === "timestamps" ? new Date(startTime()).toISOString() : undefined,
-      endTime: timingMode() === "timestamps" ? new Date(endTime()).toISOString() : undefined,
-      taskDate: timingMode() === "duration" ? taskDate() : undefined,
-      durationMinutes: timingMode() === "duration" ? durationMins() : undefined,
-      isUntracked: isUntracked(),
-    });
-
-    setTitle("");
-    setUrl("");
-    setNotes("");
     props.onClose();
   };
 
   return (
     <Show when={props.isOpen}>
       <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
-        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
           
           <div class="flex items-center justify-between pb-3 border-b border-slate-800">
             <div>
@@ -112,10 +151,10 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
                 <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                 </svg>
-                <span>Add / Import Past Task</span>
+                <span>Add Manual Task Log</span>
               </h3>
               <p class="text-xs text-slate-400 mt-0.5">
-                Manually log historical tasks with automatic Hubstaff session reconciliation.
+                Manually record task details with automatic window reconciliation.
               </p>
             </div>
             <button
@@ -130,7 +169,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
 
           <form onSubmit={handleSubmit} class="space-y-4">
             
-            {/* Role & Subrole Selection */}
+            {/* Role & Subrole */}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
@@ -219,7 +258,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
                         : "text-slate-400 hover:text-slate-200"
                     }`}
                   >
-                    Date & Duration
+                    Start Date/Time & Duration
                   </button>
                 </div>
               </div>
@@ -230,13 +269,15 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label class="block text-xs text-slate-400 mb-1">
-                        Task Date (YYYY-MM-DD)
+                        Start Date & Time (Paste supported)
                       </label>
                       <input
-                        type="date"
-                        value={taskDate()}
-                        onInput={(e) => setTaskDate(e.currentTarget.value)}
-                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                        type="datetime-local"
+                        value={startDateTime()}
+                        onClick={(e) => e.currentTarget.showPicker?.()}
+                        onPaste={(e) => handlePasteTimestamp(e, setStartDateTime)}
+                        onInput={(e) => setStartDateTime(e.currentTarget.value)}
+                        class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
                       />
                     </div>
                     <div>
@@ -257,21 +298,29 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
               >
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
-                    <label class="block text-xs text-slate-400 mb-1">Start Time</label>
+                    <label class="block text-xs text-slate-400 mb-1">
+                      Start Time (Paste supported)
+                    </label>
                     <input
                       type="datetime-local"
                       value={startTime()}
+                      onClick={(e) => e.currentTarget.showPicker?.()}
+                      onPaste={(e) => handlePasteTimestamp(e, setStartTime)}
                       onInput={(e) => setStartTime(e.currentTarget.value)}
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
                     />
                   </div>
                   <div>
-                    <label class="block text-xs text-slate-400 mb-1">End Time</label>
+                    <label class="block text-xs text-slate-400 mb-1">
+                      End Time (Paste supported)
+                    </label>
                     <input
                       type="datetime-local"
                       value={endTime()}
+                      onClick={(e) => e.currentTarget.showPicker?.()}
+                      onPaste={(e) => handlePasteTimestamp(e, setEndTime)}
                       onInput={(e) => setEndTime(e.currentTarget.value)}
-                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono"
+                      class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-mono cursor-pointer"
                     />
                   </div>
                 </div>
@@ -321,12 +370,9 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
               </button>
               <button
                 type="submit"
-                class="px-5 py-2 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-xl shadow-md shadow-sky-950 transition-colors flex items-center space-x-1.5"
+                class="px-5 py-2 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-xl shadow-md shadow-sky-950 transition-colors"
               >
-                <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                </svg>
-                <span>Add Task to Log</span>
+                Save Task Entry
               </button>
             </div>
           </form>

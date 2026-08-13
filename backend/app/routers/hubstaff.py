@@ -604,3 +604,62 @@ async def delete_task_log_endpoint(task_id: str, db: AsyncSession = Depends(get_
         await db.delete(task)
         await db.commit()
     return {"success": True, "message": "Task log deleted."}
+
+
+@router.get("/tasks/title-summary")
+async def get_tasks_title_summary(db: AsyncSession = Depends(get_db)):
+    stmt = (
+        select(
+            TaskLog.title,
+            TaskLog.role,
+            func.sum(TaskLog.duration_seconds).label("total_seconds"),
+            func.count(TaskLog.id).label("segment_count"),
+            func.max(TaskLog.created_at).label("latest_created_at"),
+        )
+        .group_by(TaskLog.title, TaskLog.role)
+        .order_by(func.max(TaskLog.created_at).desc())
+    )
+    result = await db.execute(stmt)
+    rows = result.all()
+
+    return {
+        "summaries": [
+            {
+                "title": row.title,
+                "role": row.role,
+                "totalSeconds": int(row.total_seconds or 0),
+                "segmentCount": int(row.segment_count or 0),
+                "latestCreatedAt": row.latest_created_at.isoformat() if row.latest_created_at else None,
+            }
+            for row in rows
+        ]
+    }
+
+
+@router.get("/tasks/by-title/{title}")
+async def get_tasks_by_title(title: str, db: AsyncSession = Depends(get_db)):
+    stmt = select(TaskLog).where(TaskLog.title == title).order_by(TaskLog.created_at.desc())
+    result = await db.execute(stmt)
+    logs = result.scalars().all()
+
+    return {
+        "title": title,
+        "totalSegments": len(logs),
+        "totalSeconds": sum(t.duration_seconds for t in logs),
+        "segments": [
+            {
+                "id": t.id,
+                "userId": t.user_id,
+                "role": t.role,
+                "subrole": t.subrole,
+                "title": t.title,
+                "url": t.url or "",
+                "notes": t.notes or "",
+                "durationSeconds": t.duration_seconds,
+                "timerMode": t.timer_mode,
+                "isManualEntry": t.is_manual_entry,
+                "createdAt": t.created_at.isoformat() if t.created_at else datetime.now(timezone.utc).isoformat(),
+            }
+            for t in logs
+        ],
+    }

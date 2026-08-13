@@ -87,6 +87,16 @@ async def lifespan(app: FastAPI):
                 "ALTER TABLE task_logs ADD COLUMN IF NOT EXISTS is_manual_entry BOOLEAN DEFAULT FALSE;"
             )
         )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_task_logs_title ON task_logs (title);"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_task_logs_title_role ON task_logs (title, role);"
+            )
+        )
 
     # Start 12-hour background reconciliation loop task
     task = asyncio.create_task(start_periodic_reconciliation_task())

@@ -147,7 +147,7 @@ class TaskLog(Base):
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # 'Trainer' or 'Reviewer'
     subrole: Mapped[str] = mapped_column(String(50), nullable=False)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
     url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     duration_seconds: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

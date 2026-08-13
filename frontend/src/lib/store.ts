@@ -251,19 +251,30 @@ export const saveUserSettingsToBackend = async (newSettings: Partial<UserSetting
   }
 };
 
+export const generateTaskId = (): string => {
+  const rand = Math.random().toString(36).substring(2, 7);
+  return `task_${Date.now()}_${rand}`;
+};
+
+export const getAccumulatedTaskTimeByTitle = (titleStr: string): { totalSeconds: number; segmentCount: number } => {
+  const matching = tasks.filter((t: TaskLogEntry) => t.title === titleStr);
+  const totalSeconds = matching.reduce((sum: number, t: TaskLogEntry) => sum + (t.durationSeconds || 0), 0);
+  return { totalSeconds, segmentCount: matching.length };
+};
+
 export const addHubstaffTime = (role: Role, additionalSeconds: number) => {
   setHubstaffTime(role, (prev: number) => prev + additionalSeconds);
   saveStateToLocalStorage();
 };
 
 export const addTaskLog = (
-  entry: Omit<TaskLogEntry, "id" | "userId" | "createdAt">,
+  entry: Omit<TaskLogEntry, "id" | "userId" | "createdAt"> & { id?: string },
   addToHubstaffTime: boolean = true
 ) => {
   const currentUserId = hubstaffStatus().user?.id || DEFAULT_USER.id;
   const newTask: TaskLogEntry = {
     ...entry,
-    id: `task_${Date.now()}`,
+    id: entry.id || generateTaskId(),
     userId: currentUserId,
     createdAt: new Date().toISOString(),
   };
@@ -429,7 +440,7 @@ export const addManualTaskLog = (params: AddManualTaskParams): { task: TaskLogEn
   }
 
   const newTask: TaskLogEntry = {
-    id: `task_manual_${Date.now()}`,
+    id: generateTaskId(),
     userId: currentUserId,
     role: params.role,
     subrole: params.subrole,

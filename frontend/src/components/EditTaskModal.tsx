@@ -28,6 +28,7 @@ export function EditTaskModal(props: EditTaskModalProps) {
   const [endTime, setEndTime] = createSignal<string>("");
   const [startDateTime, setStartDateTime] = createSignal<string>("");
   const [durationMins, setDurationMins] = createSignal<number>(0);
+  const [durationSecs, setDurationSecs] = createSignal<number>(0);
   const [timerMode, setTimerMode] = createSignal<"hubstaff" | "untracked">("hubstaff");
 
   createEffect(() => {
@@ -49,7 +50,9 @@ export function EditTaskModal(props: EditTaskModalProps) {
         setEndTime(endStr);
         setStartDateTime(startStr);
       }
-      setDurationMins(Math.round((props.task.durationSeconds || 0) / 60));
+      const totalSecs = props.task.durationSeconds || 0;
+      setDurationMins(Math.floor(totalSecs / 60));
+      setDurationSecs(totalSecs % 60);
     }
   });
 
@@ -98,7 +101,7 @@ export function EditTaskModal(props: EditTaskModalProps) {
           const startDt = new Date(startDateTime());
           if (!isNaN(startDt.getTime())) {
             updatedFields.createdAt = startDt.toISOString();
-            updatedFields.durationSeconds = Math.max(0, durationMins() * 60);
+            updatedFields.durationSeconds = Math.max(0, durationMins() * 60 + durationSecs());
           }
         }
       }
@@ -190,6 +193,8 @@ export function EditTaskModal(props: EditTaskModalProps) {
                 onStartDateTimeChange={setStartDateTime}
                 durationMins={durationMins()}
                 onDurationMinsChange={setDurationMins}
+                durationSecs={durationSecs()}
+                onDurationSecsChange={setDurationSecs}
                 timerMode={timerMode()}
                 onTimerModeChange={setTimerMode}
                 showUntrackedOption={true}

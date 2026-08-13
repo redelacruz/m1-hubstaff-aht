@@ -13,6 +13,7 @@ export const SUBROLES_BY_ROLE: Record<Role, Subrole[]> = {
 export interface RoleThresholds {
   expectedAhtMinutes: number;
   maxAhtMinutes: number;
+  onboardingMinutes?: number;
 }
 
 export interface UserSettings {
@@ -112,8 +113,8 @@ export const DEFAULT_SETTINGS: UserSettings = {
   pageSize: 25,
   hubstaffPageSize: 25,
   thresholds: {
-    Trainer: { expectedAhtMinutes: 15, maxAhtMinutes: 25 },
-    Reviewer: { expectedAhtMinutes: 10, maxAhtMinutes: 18 },
+    Trainer: { expectedAhtMinutes: 15, maxAhtMinutes: 25, onboardingMinutes: 120 },
+    Reviewer: { expectedAhtMinutes: 10, maxAhtMinutes: 18, onboardingMinutes: 60 },
   },
 };
 
@@ -192,6 +193,9 @@ export const updateUserSettings = (newSettings: Partial<UserSettings>) => {
       if (newSettings.thresholds.Trainer.maxAhtMinutes !== undefined) {
         setSettings("thresholds", "Trainer", "maxAhtMinutes", newSettings.thresholds.Trainer.maxAhtMinutes);
       }
+      if (newSettings.thresholds.Trainer.onboardingMinutes !== undefined) {
+        setSettings("thresholds", "Trainer", "onboardingMinutes", newSettings.thresholds.Trainer.onboardingMinutes);
+      }
     }
     if (newSettings.thresholds.Reviewer) {
       if (newSettings.thresholds.Reviewer.expectedAhtMinutes !== undefined) {
@@ -199,6 +203,9 @@ export const updateUserSettings = (newSettings: Partial<UserSettings>) => {
       }
       if (newSettings.thresholds.Reviewer.maxAhtMinutes !== undefined) {
         setSettings("thresholds", "Reviewer", "maxAhtMinutes", newSettings.thresholds.Reviewer.maxAhtMinutes);
+      }
+      if (newSettings.thresholds.Reviewer.onboardingMinutes !== undefined) {
+        setSettings("thresholds", "Reviewer", "onboardingMinutes", newSettings.thresholds.Reviewer.onboardingMinutes);
       }
     }
   }
@@ -237,8 +244,10 @@ export const saveUserSettingsToBackend = async (newSettings: Partial<UserSetting
       tracking_start_date: newSettings.trackingStartDate || settings.trackingStartDate,
       trainer_expected_aht_minutes: newSettings.thresholds?.Trainer.expectedAhtMinutes ?? settings.thresholds.Trainer.expectedAhtMinutes,
       trainer_max_aht_minutes: newSettings.thresholds?.Trainer.maxAhtMinutes ?? settings.thresholds.Trainer.maxAhtMinutes,
+      trainer_onboarding_minutes: newSettings.thresholds?.Trainer.onboardingMinutes ?? settings.thresholds.Trainer.onboardingMinutes,
       reviewer_expected_aht_minutes: newSettings.thresholds?.Reviewer.expectedAhtMinutes ?? settings.thresholds.Reviewer.expectedAhtMinutes,
       reviewer_max_aht_minutes: newSettings.thresholds?.Reviewer.maxAhtMinutes ?? settings.thresholds.Reviewer.maxAhtMinutes,
+      reviewer_onboarding_minutes: newSettings.thresholds?.Reviewer.onboardingMinutes ?? settings.thresholds.Reviewer.onboardingMinutes,
     };
 
     await fetch(`${getApiBaseUrl()}/api/hubstaff/user-settings`, {
@@ -589,10 +598,12 @@ export const fetchHubstaffStatusFromBackend = async () => {
             Trainer: {
               expectedAhtMinutes: data.user_settings.trainer_expected_aht_minutes,
               maxAhtMinutes: data.user_settings.trainer_max_aht_minutes,
+              onboardingMinutes: data.user_settings.trainer_onboarding_minutes ?? 120,
             },
             Reviewer: {
               expectedAhtMinutes: data.user_settings.reviewer_expected_aht_minutes,
               maxAhtMinutes: data.user_settings.reviewer_max_aht_minutes,
+              onboardingMinutes: data.user_settings.reviewer_onboarding_minutes ?? 60,
             },
           },
         });
@@ -688,6 +699,8 @@ export const formatMinutesDecimal = (totalSeconds: number): string => {
 export interface GlobalAhtBreakdown {
   taskCount: number;
   totalHubstaffSeconds: number;
+  onboardingSeconds: number;
+  netHubstaffSeconds: number;
   totalDirectTaskSeconds: number;
   nonTaskSeconds: number;
   globalAhtSeconds: number;
@@ -821,6 +834,18 @@ export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown
   const billedCalc = calculateHubstaffBilledSecondsFromEvents(roleFilter);
   const totalHubstaffSeconds = billedCalc.totalSeconds;
 
+  let onboardingMinutes = 0;
+  if (roleFilter === "Trainer") {
+    onboardingMinutes = settings.thresholds?.Trainer?.onboardingMinutes ?? 120;
+  } else if (roleFilter === "Reviewer") {
+    onboardingMinutes = settings.thresholds?.Reviewer?.onboardingMinutes ?? 60;
+  } else {
+    onboardingMinutes = (settings.thresholds?.Trainer?.onboardingMinutes ?? 120) + (settings.thresholds?.Reviewer?.onboardingMinutes ?? 60);
+  }
+
+  const onboardingSeconds = onboardingMinutes * 60;
+  const netHubstaffSeconds = Math.max(0, totalHubstaffSeconds - onboardingSeconds);
+
   const totalDirectTaskSeconds = filteredTasks.reduce(
     (sum: number, t: TaskLogEntry) => sum + (t.durationSeconds || 0),
     0
@@ -832,6 +857,8 @@ export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown
     return {
       taskCount: 0,
       totalHubstaffSeconds,
+      onboardingSeconds,
+      netHubstaffSeconds,
       totalDirectTaskSeconds,
       nonTaskSeconds,
       globalAhtSeconds: 0,
@@ -841,7 +868,7 @@ export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown
     };
   }
 
-  const globalAhtSeconds = Math.round(totalHubstaffSeconds / taskCount);
+  const globalAhtSeconds = Math.round(netHubstaffSeconds / taskCount);
   const globalAhtMinutes = globalAhtSeconds / 60;
 
   const directTaskAhtSeconds = Math.round(totalDirectTaskSeconds / taskCount);
@@ -850,6 +877,8 @@ export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown
   return {
     taskCount,
     totalHubstaffSeconds,
+    onboardingSeconds,
+    netHubstaffSeconds,
     totalDirectTaskSeconds,
     nonTaskSeconds,
     globalAhtSeconds,
@@ -952,7 +981,7 @@ export const getEffectiveUserRole = (): Role => {
 
 export const toLocalDateTimeLocalString = (d: Date): string => {
   const pad = (n: number) => n.toString().padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 };
 
 export const parsePastedTimestamp = (rawInput: string, currentValue?: string): string | null => {

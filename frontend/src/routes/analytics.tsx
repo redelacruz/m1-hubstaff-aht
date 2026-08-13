@@ -76,8 +76,8 @@ export default function Analytics() {
                 onChange={(e) => setSelectedRole(e.currentTarget.value as Role | "All")}
                 class="bg-slate-900 border border-slate-700 rounded-lg px-4 py-2 text-slate-100 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none pr-8 cursor-pointer"
               >
-                <option value="Trainer">Trainer Role</option>
-                <option value="Reviewer">Reviewer Role</option>
+                <option value="Trainer">Trainer</option>
+                <option value="Reviewer">Reviewer</option>
                 <option value="All">All Roles Combined</option>
               </select>
               <div class="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-slate-400">
@@ -92,7 +92,7 @@ export default function Analytics() {
 
       {/* Hubstaff Time Utilization & Global AHT Section */}
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        
+
         {/* Global AHT Card */}
         <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl relative flex flex-col justify-between">
           <div>
@@ -132,7 +132,7 @@ export default function Analytics() {
 
           <div class="mt-4 text-xs text-slate-500 flex justify-between items-center">
             <span>Formula:</span>
-            <span class="font-mono text-slate-300">Hubstaff Time ÷ Tasks</span>
+            <span class="font-mono text-slate-300">(Hubstaff Time - Onboarding) ÷ Tasks</span>
           </div>
         </div>
 
@@ -167,7 +167,7 @@ export default function Analytics() {
               </div>
             </div>
 
-            <div class="mt-4 pt-4 border-t border-slate-800 text-xs space-y-1">
+            <div class="mt-4 pt-4 border-t border-slate-800 text-xs space-y-1.5">
               <div class="flex justify-between text-slate-400">
                 <span>Task Execution Hours:</span>
                 <span class="font-mono font-bold text-slate-200">{formatDuration(currentGlobalAHT().totalDirectTaskSeconds)}</span>
@@ -175,6 +175,10 @@ export default function Analytics() {
               <div class="flex justify-between text-slate-400">
                 <span>Non-Task / Admin Hours:</span>
                 <span class="font-mono font-bold text-amber-400">{formatDuration(currentGlobalAHT().nonTaskSeconds)}</span>
+              </div>
+              <div class="flex justify-between text-slate-400">
+                <span>Onboarding Hours:</span>
+                <span class="font-mono font-bold text-sky-400">{formatDuration(currentGlobalAHT().onboardingSeconds)}</span>
               </div>
             </div>
           </div>
@@ -259,11 +263,10 @@ export default function Analytics() {
                     <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 shadow-md flex flex-col justify-between">
                       <div>
                         <div class="flex items-center justify-between mb-2">
-                          <span class={`text-[10px] font-bold px-2 py-0.5 rounded border ${
-                            parentRole === 'Trainer'
+                          <span class={`text-[10px] font-bold px-2 py-0.5 rounded border ${parentRole === 'Trainer'
                               ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800'
                               : 'bg-sky-950/80 text-sky-300 border-sky-800'
-                          }`}>
+                            }`}>
                             {parentRole}
                           </span>
                           <span class="text-xs font-mono font-bold text-slate-300">

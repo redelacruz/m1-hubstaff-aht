@@ -38,10 +38,11 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
   const [endTime, setEndTime] = createSignal<string>("");
   const [startDateTime, setStartDateTime] = createSignal<string>("");
   const [durationMins, setDurationMins] = createSignal<number>(15);
+  const [durationSecs, setDurationSecs] = createSignal<number>(0);
 
   const formatLocalDateTimeLocal = (d: Date) => {
     const pad = (n: number) => n.toString().padStart(2, "0");
-    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
 
   createEffect(() => {
@@ -106,7 +107,8 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
         const startDt = new Date(startDateTime());
         if (!isNaN(startDt.getTime())) {
           startIso = startDt.toISOString();
-          const endDt = new Date(startDt.getTime() + durationMins() * 60 * 1000);
+          const totalSecs = durationMins() * 60 + durationSecs();
+          const endDt = new Date(startDt.getTime() + totalSecs * 1000);
           endIso = endDt.toISOString();
         }
       }
@@ -119,7 +121,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
         notes: notes().trim(),
         startTime: startIso,
         endTime: endIso,
-        durationMinutes: durationMins(),
+        durationMinutes: durationMins() + durationSecs() / 60,
         isUntracked: isUntracked(),
       });
     }
@@ -131,7 +133,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
     <Show when={props.isOpen}>
       <div class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fadeIn">
         <div class="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-          
+
           <div class="flex items-center justify-between pb-3 border-b border-slate-800">
             <div>
               <h3 class="text-lg font-bold text-white flex items-center space-x-2">
@@ -155,7 +157,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
           </div>
 
           <form onSubmit={handleSubmit} class="space-y-4">
-            
+
             {/* Role & Subrole */}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
@@ -197,7 +199,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Legacy Ticket Audit #302"
+                  placeholder="e.g. gnLokxh8Gsk or 4081768869215654175"
                   value={title()}
                   onInput={(e) => setTitle(e.currentTarget.value)}
                   class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -210,7 +212,7 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
                 </label>
                 <input
                   type="url"
-                  placeholder="https://hubstaff.com/tasks/..."
+                  placeholder="https://feather.openai.com/tasks/..."
                   value={url()}
                   onInput={(e) => setUrl(e.currentTarget.value)}
                   class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -231,6 +233,8 @@ export function AddManualTaskModal(props: AddManualTaskModalProps) {
               onStartDateTimeChange={setStartDateTime}
               durationMins={durationMins()}
               onDurationMinsChange={setDurationMins}
+              durationSecs={durationSecs()}
+              onDurationSecsChange={setDurationSecs}
             />
 
             {/* Reconciliation Strategy Option */}

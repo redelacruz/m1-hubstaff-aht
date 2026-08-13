@@ -26,12 +26,18 @@ export default function Settings() {
   const [trainerMax, setTrainerMax] = createSignal<number>(
     settings.thresholds.Trainer.maxAhtMinutes
   );
+  const [trainerOnboarding, setTrainerOnboarding] = createSignal<number>(
+    settings.thresholds.Trainer.onboardingMinutes ?? 120
+  );
 
   const [reviewerExpected, setReviewerExpected] = createSignal<number>(
     settings.thresholds.Reviewer.expectedAhtMinutes
   );
   const [reviewerMax, setReviewerMax] = createSignal<number>(
     settings.thresholds.Reviewer.maxAhtMinutes
+  );
+  const [reviewerOnboarding, setReviewerOnboarding] = createSignal<number>(
+    settings.thresholds.Reviewer.onboardingMinutes ?? 60
   );
 
   // Hubstaff PAT Authentication State
@@ -94,10 +100,12 @@ export default function Settings() {
         Trainer: {
           expectedAhtMinutes: Number(trainerExpected()),
           maxAhtMinutes: Number(trainerMax()),
+          onboardingMinutes: Number(trainerOnboarding()),
         },
         Reviewer: {
           expectedAhtMinutes: Number(reviewerExpected()),
           maxAhtMinutes: Number(reviewerMax()),
+          onboardingMinutes: Number(reviewerOnboarding()),
         },
       },
     };
@@ -654,6 +662,23 @@ export default function Settings() {
                     class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
                   />
                 </div>
+
+                <div>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Onboarding Time (Minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1440"
+                    value={trainerOnboarding()}
+                    onInput={(e) => setTrainerOnboarding(parseInt(e.currentTarget.value) || 0)}
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                  <p class="text-[11px] text-slate-400 mt-1">
+                    Billed time excluded from Global Effective AHT calculation.
+                  </p>
+                </div>
               </div>
             </Show>
 
@@ -690,6 +715,23 @@ export default function Settings() {
                     onInput={(e) => setReviewerMax(parseInt(e.currentTarget.value) || 1)}
                     class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                   />
+                </div>
+
+                <div>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                    Onboarding Time (Minutes)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    max="1440"
+                    value={reviewerOnboarding()}
+                    onInput={(e) => setReviewerOnboarding(parseInt(e.currentTarget.value) || 0)}
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                  />
+                  <p class="text-[11px] text-slate-400 mt-1">
+                    Billed time excluded from Global Effective AHT calculation.
+                  </p>
                 </div>
               </div>
             </Show>

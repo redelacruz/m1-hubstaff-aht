@@ -175,8 +175,10 @@ class UserSettings(Base):
     tracking_start_date: Mapped[date] = mapped_column(Date, nullable=False)
     trainer_expected_aht_minutes: Mapped[float] = mapped_column(Numeric(5, 2), default=15.00, nullable=False)
     trainer_max_aht_minutes: Mapped[float] = mapped_column(Numeric(5, 2), default=25.00, nullable=False)
+    trainer_onboarding_minutes: Mapped[float] = mapped_column(Numeric(6, 2), default=120.00, nullable=False)
     reviewer_expected_aht_minutes: Mapped[float] = mapped_column(Numeric(5, 2), default=10.00, nullable=False)
     reviewer_max_aht_minutes: Mapped[float] = mapped_column(Numeric(5, 2), default=18.00, nullable=False)
+    reviewer_onboarding_minutes: Mapped[float] = mapped_column(Numeric(6, 2), default=60.00, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

@@ -186,7 +186,7 @@ export default function Home() {
 
       {/* Main Grid: Input Form + Global AHT Widget */}
       <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        
+
         {/* Left Column: Task Input Form */}
         <div class="lg:col-span-8 bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col justify-between">
           <div>
@@ -206,11 +206,10 @@ export default function Home() {
                   Timer Tracking Mode
                 </label>
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <label class={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${
-                    timerMode() === 'hubstaff'
-                      ? 'bg-sky-950/60 border-sky-500/80'
-                      : 'bg-slate-950 border-slate-800'
-                  }`}>
+                  <label class={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${timerMode() === 'hubstaff'
+                    ? 'bg-sky-950/60 border-sky-500/80'
+                    : 'bg-slate-950 border-slate-800'
+                    }`}>
                     <input
                       type="radio"
                       name="timerMode"
@@ -225,11 +224,10 @@ export default function Home() {
                     </div>
                   </label>
 
-                  <label class={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${
-                    timerMode() === 'untracked'
-                      ? 'bg-amber-950/60 border-amber-500/80'
-                      : 'bg-slate-950 border-slate-800'
-                  }`}>
+                  <label class={`flex items-center p-3 rounded-xl border cursor-pointer transition-all ${timerMode() === 'untracked'
+                    ? 'bg-amber-950/60 border-amber-500/80'
+                    : 'bg-slate-950 border-slate-800'
+                    }`}>
                     <input
                       type="radio"
                       name="timerMode"
@@ -304,7 +302,7 @@ export default function Home() {
                   <input
                     type="text"
                     required
-                    placeholder="e.g. Audit Support Escalation Ticket #501"
+                    placeholder="e.g. gnLokxh8Gsk or 4081768869215654175"
                     value={taskTitle()}
                     onInput={(e) => setTaskTitle(e.currentTarget.value)}
                     class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -317,7 +315,7 @@ export default function Home() {
                   </label>
                   <input
                     type="url"
-                    placeholder="https://hubstaff.com/tasks/..."
+                    placeholder="https://feather.openai.com/tasks/..."
                     value={taskUrl()}
                     onInput={(e) => setTaskUrl(e.currentTarget.value)}
                     class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
@@ -357,7 +355,7 @@ export default function Home() {
 
         {/* Right Column: Timer Display & Current Role Global AHT Widget */}
         <div class="lg:col-span-4 space-y-6">
-          
+
           {/* Active Task Timer Card */}
           <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
             <div class="flex items-center justify-between mb-3">
@@ -507,25 +505,22 @@ export default function Home() {
               <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
                 <button
                   onClick={() => setLogFilterRole("All")}
-                  class={`px-2.5 py-0.5 rounded transition-all ${
-                    logFilterRole() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                  }`}
+                  class={`px-2.5 py-0.5 rounded transition-all ${logFilterRole() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                    }`}
                 >
                   All
                 </button>
                 <button
                   onClick={() => setLogFilterRole("Trainer")}
-                  class={`px-2.5 py-0.5 rounded transition-all ${
-                    logFilterRole() === "Trainer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                  }`}
+                  class={`px-2.5 py-0.5 rounded transition-all ${logFilterRole() === "Trainer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                    }`}
                 >
                   Trainer
                 </button>
                 <button
                   onClick={() => setLogFilterRole("Reviewer")}
-                  class={`px-2.5 py-0.5 rounded transition-all ${
-                    logFilterRole() === "Reviewer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                  }`}
+                  class={`px-2.5 py-0.5 rounded transition-all ${logFilterRole() === "Reviewer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                    }`}
                 >
                   Reviewer
                 </button>
@@ -572,11 +567,10 @@ export default function Home() {
 
                       <td class="py-3 px-4 whitespace-nowrap">
                         <div class="flex flex-col space-y-1">
-                          <span class={`w-max text-[10px] font-bold px-2 py-0.5 rounded border ${
-                            task.role === 'Trainer'
-                              ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800'
-                              : 'bg-sky-950/80 text-sky-300 border-sky-800'
-                          }`}>
+                          <span class={`w-max text-[10px] font-bold px-2 py-0.5 rounded border ${task.role === 'Trainer'
+                            ? 'bg-indigo-950/80 text-indigo-300 border-indigo-800'
+                            : 'bg-sky-950/80 text-sky-300 border-sky-800'
+                            }`}>
                             {task.role}
                           </span>
                           <span class="text-slate-300 font-medium">{task.subrole}</span>

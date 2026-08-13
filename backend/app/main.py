@@ -89,6 +89,16 @@ async def lifespan(app: FastAPI):
         )
         await conn.execute(
             text(
+                "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS trainer_onboarding_minutes NUMERIC(6,2) DEFAULT 120.00;"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS reviewer_onboarding_minutes NUMERIC(6,2) DEFAULT 60.00;"
+            )
+        )
+        await conn.execute(
+            text(
                 "CREATE INDEX IF NOT EXISTS ix_task_logs_title ON task_logs (title);"
             )
         )

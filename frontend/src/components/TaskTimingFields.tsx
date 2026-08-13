@@ -17,6 +17,8 @@ export interface TaskTimingFieldsProps {
 
   durationMins: number;
   onDurationMinsChange: (val: number) => void;
+  durationSecs?: number;
+  onDurationSecsChange?: (val: number) => void;
 
   timerMode?: "hubstaff" | "untracked";
   onTimerModeChange?: (mode: "hubstaff" | "untracked") => void;
@@ -96,7 +98,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
             <div>
               <div class="flex items-center justify-between mb-1">
                 <label class="text-xs text-slate-400">
-                  Start Date & Time
+                  Start Date & Time (with seconds)
                 </label>
                 <button
                   type="button"
@@ -111,6 +113,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
                 <input
                   ref={(el) => (startDateTimeInputRef = el)}
                   type="datetime-local"
+                  step="1"
                   value={props.startDateTime}
                   onPaste={(e) => handlePasteTimestamp(e, props.startDateTime, props.onStartDateTimeChange)}
                   onInput={(e) => props.onStartDateTimeChange(e.currentTarget.value)}
@@ -130,17 +133,37 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
             </div>
             <div>
               <label class="block text-xs text-slate-400 mb-1">
-                Elapsed Duration (Minutes)
+                Elapsed Duration (MM:SS)
               </label>
-              <input
-                type="number"
-                min="0"
-                max="480"
-                disabled={props.timerMode === "untracked"}
-                value={props.durationMins}
-                onInput={(e) => props.onDurationMinsChange(parseInt(e.currentTarget.value) || 0)}
-                class="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-mono disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
+              <div class="flex items-center space-x-2">
+                <div class="flex-1 relative flex items-center">
+                  <input
+                    type="number"
+                    min="0"
+                    max="480"
+                    disabled={props.timerMode === "untracked"}
+                    value={props.durationMins}
+                    onInput={(e) => props.onDurationMinsChange(Math.max(0, parseInt(e.currentTarget.value) || 0))}
+                    class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-3 pr-7 py-2 text-xs text-white font-mono text-center disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    placeholder="00"
+                  />
+                  <span class="absolute right-2 text-xs text-slate-500 font-mono">m</span>
+                </div>
+                <span class="text-slate-400 font-bold font-mono text-xs">:</span>
+                <div class="flex-1 relative flex items-center">
+                  <input
+                    type="number"
+                    min="0"
+                    max="59"
+                    disabled={props.timerMode === "untracked"}
+                    value={props.durationSecs ?? 0}
+                    onInput={(e) => props.onDurationSecsChange ? props.onDurationSecsChange(Math.min(59, Math.max(0, parseInt(e.currentTarget.value) || 0))) : null}
+                    class="w-full bg-slate-900 border border-slate-700 rounded-xl pl-3 pr-7 py-2 text-xs text-white font-mono text-center disabled:opacity-40 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    placeholder="00"
+                  />
+                  <span class="absolute right-2 text-xs text-slate-500 font-mono">s</span>
+                </div>
+              </div>
             </div>
           </div>
         }
@@ -149,7 +172,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
           <div>
             <div class="flex items-center justify-between mb-1">
               <label class="text-xs text-slate-400">
-                Start Time
+                Start Time (with seconds)
               </label>
               <button
                 type="button"
@@ -164,6 +187,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
               <input
                 ref={(el) => (startTimeInputRef = el)}
                 type="datetime-local"
+                step="1"
                 value={props.startTime}
                 onPaste={(e) => handlePasteTimestamp(e, props.startTime, props.onStartTimeChange)}
                 onInput={(e) => props.onStartTimeChange(e.currentTarget.value)}
@@ -184,7 +208,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
           <div>
             <div class="flex items-center justify-between mb-1">
               <label class="text-xs text-slate-400">
-                End Time
+                End Time (with seconds)
               </label>
               <button
                 type="button"
@@ -199,6 +223,7 @@ export function TaskTimingFields(props: TaskTimingFieldsProps) {
               <input
                 ref={(el) => (endTimeInputRef = el)}
                 type="datetime-local"
+                step="1"
                 value={props.endTime}
                 onPaste={(e) => handlePasteTimestamp(e, props.endTime, props.onEndTimeChange)}
                 onInput={(e) => props.onEndTimeChange(e.currentTarget.value)}

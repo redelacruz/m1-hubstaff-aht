@@ -41,8 +41,10 @@ class UserSettingsUpdateRequest(BaseModel):
     tracking_start_date: str = Field("2026-08-01", description="Tracking start date YYYY-MM-DD")
     trainer_expected_aht_minutes: float = Field(15.0, ge=1.0)
     trainer_max_aht_minutes: float = Field(25.0, ge=1.0)
+    trainer_onboarding_minutes: float = Field(120.0, ge=0.0)
     reviewer_expected_aht_minutes: float = Field(10.0, ge=1.0)
     reviewer_max_aht_minutes: float = Field(18.0, ge=1.0)
+    reviewer_onboarding_minutes: float = Field(60.0, ge=0.0)
 
 
 @router.post("/pat")
@@ -107,8 +109,10 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
             tracking_start_date=datetime.now().date(),
             trainer_expected_aht_minutes=15.0,
             trainer_max_aht_minutes=25.0,
+            trainer_onboarding_minutes=120.0,
             reviewer_expected_aht_minutes=10.0,
             reviewer_max_aht_minutes=18.0,
+            reviewer_onboarding_minutes=60.0,
         )
         db.add(user_setting)
         await db.commit()
@@ -172,8 +176,10 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
             "tracking_start_date": str(user_setting.tracking_start_date) if user_setting else "2026-08-01",
             "trainer_expected_aht_minutes": float(user_setting.trainer_expected_aht_minutes) if user_setting else 15.0,
             "trainer_max_aht_minutes": float(user_setting.trainer_max_aht_minutes) if user_setting else 25.0,
+            "trainer_onboarding_minutes": float(getattr(user_setting, "trainer_onboarding_minutes", 120.0) or 120.0) if user_setting else 120.0,
             "reviewer_expected_aht_minutes": float(user_setting.reviewer_expected_aht_minutes) if user_setting else 10.0,
             "reviewer_max_aht_minutes": float(user_setting.reviewer_max_aht_minutes) if user_setting else 18.0,
+            "reviewer_onboarding_minutes": float(getattr(user_setting, "reviewer_onboarding_minutes", 60.0) or 60.0) if user_setting else 60.0,
         } if user_setting else None,
         "organizations": orgs_payload,
         "webhook_status": webhook_status_payload,
@@ -419,8 +425,10 @@ async def update_db_user_settings(request: UserSettingsUpdateRequest, db: AsyncS
             tracking_start_date=parsed_date,
             trainer_expected_aht_minutes=request.trainer_expected_aht_minutes,
             trainer_max_aht_minutes=request.trainer_max_aht_minutes,
+            trainer_onboarding_minutes=request.trainer_onboarding_minutes,
             reviewer_expected_aht_minutes=request.reviewer_expected_aht_minutes,
             reviewer_max_aht_minutes=request.reviewer_max_aht_minutes,
+            reviewer_onboarding_minutes=request.reviewer_onboarding_minutes,
         )
         db.add(user_setting)
     else:
@@ -428,6 +436,10 @@ async def update_db_user_settings(request: UserSettingsUpdateRequest, db: AsyncS
         user_setting.tracking_start_date = parsed_date
         user_setting.trainer_expected_aht_minutes = request.trainer_expected_aht_minutes
         user_setting.trainer_max_aht_minutes = request.trainer_max_aht_minutes
+        user_setting.trainer_onboarding_minutes = request.trainer_onboarding_minutes
+        user_setting.reviewer_expected_aht_minutes = request.reviewer_expected_aht_minutes
+        user_setting.reviewer_max_aht_minutes = request.reviewer_max_aht_minutes
+        user_setting.reviewer_onboarding_minutes = request.reviewer_onboarding_minutes
         user_setting.reviewer_expected_aht_minutes = request.reviewer_expected_aht_minutes
         user_setting.reviewer_max_aht_minutes = request.reviewer_max_aht_minutes
 

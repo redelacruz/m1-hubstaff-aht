@@ -12,6 +12,14 @@ export default function HubstaffDataPage() {
   const [toastMsg, setToastMsg] = createSignal<string>("");
   const [isSyncing, setIsSyncing] = createSignal<boolean>(false);
 
+  // Sorting & Filtering State
+  const [sortOrder, setSortOrder] = createSignal<"desc" | "asc">("desc"); // Default: reverse chronological (newest first)
+  const [startDateFilter, setStartDateFilter] = createSignal<string>("");
+  const [endDateFilter, setEndDateFilter] = createSignal<string>("");
+  const [eventNameFilter, setEventNameFilter] = createSignal<string>("all");
+  const [projectNameFilter, setProjectNameFilter] = createSignal<string>("");
+  const [projectIdFilter, setProjectIdFilter] = createSignal<string>("");
+
   const handlePageSizeChange = (size: number) => {
     setPageSize(size);
     updateUserSettings({ hubstaffPageSize: size });
@@ -30,11 +38,80 @@ export default function HubstaffDataPage() {
     setTimeout(() => setToastMsg(""), 4000);
   };
 
-  const totalPages = () => Math.max(1, Math.ceil(hubstaffEvents.length / pageSize()));
+  const handleResetFilters = () => {
+    setStartDateFilter("");
+    setEndDateFilter("");
+    setEventNameFilter("all");
+    setProjectNameFilter("");
+    setProjectIdFilter("");
+    setSortOrder("desc");
+    setCurrentPage(1);
+  };
+
+  const isAnyFilterActive = () => {
+    return (
+      startDateFilter() !== "" ||
+      endDateFilter() !== "" ||
+      eventNameFilter() !== "all" ||
+      projectNameFilter() !== "" ||
+      projectIdFilter() !== "" ||
+      sortOrder() !== "desc"
+    );
+  };
+
+  // Filter & Sort Pipeline
+  const filteredAndSortedEvents = () => {
+    let list = [...hubstaffEvents];
+
+    // Filter by Start Date
+    if (startDateFilter()) {
+      const startMs = new Date(`${startDateFilter()}T00:00:00`).getTime();
+      if (!isNaN(startMs)) {
+        list = list.filter((evt) => new Date(evt.eventTime).getTime() >= startMs);
+      }
+    }
+
+    // Filter by End Date
+    if (endDateFilter()) {
+      const endMs = new Date(`${endDateFilter()}T23:59:59.999`).getTime();
+      if (!isNaN(endMs)) {
+        list = list.filter((evt) => new Date(evt.eventTime).getTime() <= endMs);
+      }
+    }
+
+    // Filter by Event Name
+    if (eventNameFilter() !== "all") {
+      list = list.filter((evt) => evt.eventName === eventNameFilter());
+    }
+
+    // Filter by Project Name
+    if (projectNameFilter().trim()) {
+      const q = projectNameFilter().trim().toLowerCase();
+      list = list.filter((evt) => evt.projectName.toLowerCase().includes(q));
+    }
+
+    // Filter by Project ID
+    if (projectIdFilter().trim()) {
+      const q = projectIdFilter().trim().toLowerCase();
+      list = list.filter((evt) => evt.projectId.toLowerCase().includes(q));
+    }
+
+    // Sort by eventTime (desc = reverse chronological / newest first, asc = oldest first)
+    list.sort((a, b) => {
+      const timeA = new Date(a.eventTime).getTime();
+      const timeB = new Date(b.eventTime).getTime();
+      return sortOrder() === "desc" ? timeB - timeA : timeA - timeB;
+    });
+
+    return list;
+  };
+
+  const totalFilteredCount = () => filteredAndSortedEvents().length;
+  const totalPages = () => Math.max(1, Math.ceil(totalFilteredCount() / pageSize()));
 
   const paginatedEvents = () => {
     const start = (currentPage() - 1) * pageSize();
-    return hubstaffEvents.slice(start, start + pageSize());
+    return filteredAndSortedEvents().slice(start, start + pageSize());
   };
 
   return (
@@ -78,10 +155,124 @@ export default function HubstaffDataPage() {
       </div>
 
       {/* Main Table Container */}
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+        
+        {/* Filters Controls Panel */}
+        <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-4">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center space-x-2 text-xs font-semibold text-slate-300">
+              <svg class="w-4 h-4 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" />
+              </svg>
+              <span>Filter & Sort Controls</span>
+            </div>
+            
+            <div class="flex items-center space-x-3">
+              {/* Sort Order Toggle Button */}
+              <button
+                onClick={() => setSortOrder((s) => (s === "desc" ? "asc" : "desc"))}
+                class="px-3 py-1.5 bg-slate-900 border border-slate-700 hover:border-sky-500 text-sky-300 rounded-lg text-xs font-medium flex items-center space-x-1.5 transition-all shadow-sm"
+              >
+                <span>Sort: {sortOrder() === "desc" ? "Newest First" : "Oldest First"}</span>
+                <span class="text-sky-400 font-bold">{sortOrder() === "desc" ? "↓" : "↑"}</span>
+              </button>
+
+              <Show when={isAnyFilterActive()}>
+                <button
+                  onClick={handleResetFilters}
+                  class="px-3 py-1.5 bg-rose-950/50 border border-rose-800/60 hover:bg-rose-900/60 text-rose-300 rounded-lg text-xs font-medium transition-all"
+                >
+                  Reset Filters
+                </button>
+              </Show>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 text-xs">
+            {/* Start Date */}
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Start Date</label>
+              <input
+                type="date"
+                value={startDateFilter()}
+                onInput={(e) => {
+                  setStartDateFilter(e.currentTarget.value);
+                  setCurrentPage(1);
+                }}
+                class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
+
+            {/* End Date */}
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">End Date</label>
+              <input
+                type="date"
+                value={endDateFilter()}
+                onInput={(e) => {
+                  setEndDateFilter(e.currentTarget.value);
+                  setCurrentPage(1);
+                }}
+                class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
+
+            {/* Event Name Filter */}
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Event Type</label>
+              <select
+                value={eventNameFilter()}
+                onChange={(e) => {
+                  setEventNameFilter(e.currentTarget.value);
+                  setCurrentPage(1);
+                }}
+                class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              >
+                <option value="all">All Events</option>
+                <option value="Timer Started">Timer Started</option>
+                <option value="Timer Stopped">Timer Stopped</option>
+              </select>
+            </div>
+
+            {/* Project Name Filter */}
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Project Name</label>
+              <input
+                type="text"
+                placeholder="Filter by project..."
+                value={projectNameFilter()}
+                onInput={(e) => {
+                  setProjectNameFilter(e.currentTarget.value);
+                  setCurrentPage(1);
+                }}
+                class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500"
+              />
+            </div>
+
+            {/* Project ID Filter */}
+            <div>
+              <label class="block text-[11px] font-medium text-slate-400 mb-1">Project ID</label>
+              <input
+                type="text"
+                placeholder="Filter by ID..."
+                value={projectIdFilter()}
+                onInput={(e) => {
+                  setProjectIdFilter(e.currentTarget.value);
+                  setCurrentPage(1);
+                }}
+                class="w-full bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-sky-500 font-mono"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Status Bar / Page Size Header */}
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-2 border-b border-slate-800">
           <div class="text-xs text-slate-400">
-            Current Historical Window: <span class="text-sky-300 font-mono font-bold">{settings.trackingStartDate}</span> to Present
+            Showing events for window: <span class="text-sky-300 font-mono font-bold">{settings.trackingStartDate}</span> to Present
+            <Show when={isAnyFilterActive()}>
+              <span class="ml-2 text-amber-400 font-medium">(Filtered: {totalFilteredCount()} of {hubstaffEvents.length})</span>
+            </Show>
           </div>
 
           {/* Page Size Selector */}
@@ -105,7 +296,15 @@ export default function HubstaffDataPage() {
             <thead>
               <tr class="text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800 bg-slate-950/40">
                 <th class="py-3 px-4">Event Name</th>
-                <th class="py-3 px-4">Event Time</th>
+                <th
+                  onClick={() => setSortOrder((s) => (s === "desc" ? "asc" : "desc"))}
+                  class="py-3 px-4 cursor-pointer hover:text-sky-400 transition-colors select-none"
+                >
+                  <div class="flex items-center space-x-1">
+                    <span>Event Time</span>
+                    <span class="text-sky-400">{sortOrder() === "desc" ? "↓" : "↑"}</span>
+                  </div>
+                </th>
                 <th class="py-3 px-4">Project ID</th>
                 <th class="py-3 px-4">Project Name</th>
               </tr>
@@ -116,7 +315,9 @@ export default function HubstaffDataPage() {
                 fallback={
                   <tr>
                     <td colSpan={4} class="py-12 text-center text-slate-500">
-                      No Hubstaff events found. Click "Sync Data from Hubstaff" to fetch events.
+                      {hubstaffEvents.length === 0
+                        ? 'No Hubstaff events found. Click "Sync Data from Hubstaff" to fetch events.'
+                        : 'No events match the current filter criteria.'}
                     </td>
                   </tr>
                 }
@@ -170,9 +371,9 @@ export default function HubstaffDataPage() {
         {/* Pagination Footer */}
         <div class="pt-4 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs text-slate-400">
           <div>
-            Showing <span class="font-bold text-slate-200">{hubstaffEvents.length > 0 ? (currentPage() - 1) * pageSize() + 1 : 0}</span> to{" "}
-            <span class="font-bold text-slate-200">{Math.min(currentPage() * pageSize(), hubstaffEvents.length)}</span> of{" "}
-            <span class="font-bold text-slate-200">{hubstaffEvents.length}</span> Hubstaff event records
+            Showing <span class="font-bold text-slate-200">{totalFilteredCount() > 0 ? (currentPage() - 1) * pageSize() + 1 : 0}</span> to{" "}
+            <span class="font-bold text-slate-200">{Math.min(currentPage() * pageSize(), totalFilteredCount())}</span> of{" "}
+            <span class="font-bold text-slate-200">{totalFilteredCount()}</span> filtered Hubstaff event records
           </div>
 
           <div class="flex items-center space-x-2 self-end sm:self-auto">

@@ -164,7 +164,9 @@ export default function HubstaffDataPage() {
       <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <div class="flex items-center space-x-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
-            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
             <span>Hubstaff Webhook Data Ingestion</span>
           </div>
           <h1 class="text-2xl font-extrabold text-white tracking-tight">Hubstaff Raw Event Log</h1>

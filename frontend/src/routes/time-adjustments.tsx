@@ -1,4 +1,4 @@
-import { createSignal, createEffect, For, Show } from "solid-js";
+import { createSignal, createEffect, For, Show, onMount } from "solid-js";
 import {
   Role,
   HubstaffTimeAdjustment,
@@ -9,10 +9,16 @@ import {
   formatDuration,
   parsePastedTimestamp,
   toLocalDateTimeLocalString,
+  fetchHubstaffStatusFromBackend,
+  fetchTimeAdjustmentsFromBackend,
 } from "../lib/store";
 import { ConfirmationModal } from "../components/ConfirmationModal";
 
 export default function TimeAdjustmentsPage() {
+  onMount(() => {
+    fetchHubstaffStatusFromBackend();
+    fetchTimeAdjustmentsFromBackend();
+  });
   // Filters & Search
   const [filterRole, setFilterRole] = createSignal<Role | "All">("All");
   const [filterType, setFilterType] = createSignal<"All" | "addition" | "deletion">("All");
@@ -232,6 +238,16 @@ export default function TimeAdjustmentsPage() {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   };
 
+  const formatNetAdjustmentDisplay = (netSeconds: number) => {
+    const sign = netSeconds > 0 ? "+" : netSeconds < 0 ? "-" : "+";
+    const formatted = formatHHMMSS(Math.abs(netSeconds));
+    let colorClass = "text-white";
+    if (netSeconds > 0) colorClass = "text-emerald-400";
+    else if (netSeconds < 0) colorClass = "text-rose-400";
+
+    return { text: `${sign}${formatted}`, colorClass };
+  };
+
   return (
     <div class="space-y-8">
       {/* Toast Notification */}
@@ -261,7 +277,9 @@ export default function TimeAdjustmentsPage() {
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div class="flex items-center space-x-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
-              <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
               <span>Manual Time Adjustments</span>
             </div>
             <h1 class="text-2xl font-extrabold text-white tracking-tight">Hubstaff Time Adjustments Log</h1>
@@ -290,9 +308,14 @@ export default function TimeAdjustmentsPage() {
             <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Trainer Time Adjustments</span>
             <span class="text-xs font-mono font-bold px-2 py-0.5 bg-sky-950 text-sky-300 border border-sky-900 rounded">Trainer</span>
           </div>
-          <div class="text-2xl font-extrabold font-mono text-white my-1">
-            {calcMetrics().trainerNet >= 0 ? "+" : ""}{formatHHMMSS(Math.abs(calcMetrics().trainerNet))}
-          </div>
+          {(() => {
+            const m = formatNetAdjustmentDisplay(calcMetrics().trainerNet);
+            return (
+              <div class={`text-2xl font-extrabold font-mono my-1 ${m.colorClass}`}>
+                {m.text}
+              </div>
+            );
+          })()}
           <div class="flex justify-between text-xs text-slate-400 pt-2 border-t border-slate-800/80">
             <span>Additions: <strong class="text-emerald-400 font-mono">+{formatHHMMSS(calcMetrics().trainerAdd)}</strong></span>
             <span>Deletions: <strong class="text-rose-400 font-mono">-{formatHHMMSS(calcMetrics().trainerDel)}</strong></span>
@@ -305,9 +328,14 @@ export default function TimeAdjustmentsPage() {
             <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Reviewer Time Adjustments</span>
             <span class="text-xs font-mono font-bold px-2 py-0.5 bg-purple-950 text-purple-300 border border-purple-900 rounded">Reviewer</span>
           </div>
-          <div class="text-2xl font-extrabold font-mono text-white my-1">
-            {calcMetrics().reviewerNet >= 0 ? "+" : ""}{formatHHMMSS(Math.abs(calcMetrics().reviewerNet))}
-          </div>
+          {(() => {
+            const m = formatNetAdjustmentDisplay(calcMetrics().reviewerNet);
+            return (
+              <div class={`text-2xl font-extrabold font-mono my-1 ${m.colorClass}`}>
+                {m.text}
+              </div>
+            );
+          })()}
           <div class="flex justify-between text-xs text-slate-400 pt-2 border-t border-slate-800/80">
             <span>Additions: <strong class="text-emerald-400 font-mono">+{formatHHMMSS(calcMetrics().reviewerAdd)}</strong></span>
             <span>Deletions: <strong class="text-rose-400 font-mono">-{formatHHMMSS(calcMetrics().reviewerDel)}</strong></span>
@@ -320,9 +348,14 @@ export default function TimeAdjustmentsPage() {
             <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Net Hubstaff Billed Impact</span>
             <span class="text-xs font-mono font-bold px-2 py-0.5 bg-slate-800 text-slate-300 border border-slate-700 rounded">{calcMetrics().count} Records</span>
           </div>
-          <div class={`text-2xl font-extrabold font-mono my-1 ${calcMetrics().totalNet >= 0 ? "text-emerald-400" : "text-rose-400"}`}>
-            {calcMetrics().totalNet >= 0 ? "+" : ""}{formatHHMMSS(Math.abs(calcMetrics().totalNet))}
-          </div>
+          {(() => {
+            const m = formatNetAdjustmentDisplay(calcMetrics().totalNet);
+            return (
+              <div class={`text-2xl font-extrabold font-mono my-1 ${m.colorClass}`}>
+                {m.text}
+              </div>
+            );
+          })()}
           <div class="text-xs text-slate-400 pt-2 border-t border-slate-800/80">
             Net adjustment added/subtracted from Hubstaff totals
           </div>

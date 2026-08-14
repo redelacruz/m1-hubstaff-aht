@@ -693,7 +693,7 @@ export default function Home() {
               </div>
 
               {/* Action Bar */}
-              <div class="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-800">
+              <div class="pt-4 flex flex-col sm:flex-row sm:items-center justify-end gap-4 border-t border-slate-800">
                 <Show
                   when={activeTasking.isTasking}
                   fallback={
@@ -709,18 +709,7 @@ export default function Home() {
                     </button>
                   }
                 >
-                  <div class="flex items-center space-x-3 w-full sm:w-auto">
-                    <button
-                      type="button"
-                      onClick={handleEndTaskLog}
-                      class="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-950 transition-all flex items-center justify-center space-x-2"
-                    >
-                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-                      </svg>
-                      <span>End Task Log</span>
-                    </button>
-
+                  <div class="flex items-center space-x-3 w-full sm:w-auto justify-end">
                     <button
                       type="button"
                       onClick={() => setIsCancelModalOpen(true)}
@@ -730,6 +719,17 @@ export default function Home() {
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                       </svg>
                       <span>Cancel</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleEndTaskLog}
+                      class="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-950 transition-all flex items-center justify-center space-x-2"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>End Task Log</span>
                     </button>
                   </div>
                 </Show>

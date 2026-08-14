@@ -116,8 +116,8 @@ export function TaskGroupModal(props: TaskGroupModalProps) {
                       <td class="py-2.5 px-3 font-mono font-bold text-slate-100 whitespace-nowrap">
                         {formatTaskDuration(task.durationSeconds)}
                       </td>
-                      <td class="py-2.5 px-3 text-slate-400 max-w-xs break-words text-[11px]">
-                        {task.notes || <span class="italic text-slate-600">No notes</span>}
+                      <td class="py-2.5 px-3 text-slate-300 max-w-xs break-words text-xs italic font-normal">
+                        {task.notes || <span class="not-italic text-slate-600">No notes</span>}
                       </td>
                       <Show when={props.onEditTask || props.onDeleteTask}>
                         <td class="py-2.5 px-3 text-right whitespace-nowrap space-x-1">

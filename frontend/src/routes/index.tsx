@@ -961,7 +961,7 @@ export default function Home() {
                             </Show>
                           </div>
                           <Show when={task.notes}>
-                            <p class="text-[11px] text-slate-400 mt-1 italic">
+                            <p class="text-xs text-slate-300 mt-1 italic font-normal">
                               "{task.notes}"
                             </p>
                           </Show>

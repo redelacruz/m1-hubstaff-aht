@@ -1,4 +1,5 @@
 import { createSignal, createEffect, For, Show } from "solid-js";
+import { Portal } from "solid-js/web";
 import {
   Role,
   TaskLogEntry,
@@ -84,12 +85,14 @@ export default function TaskLogPage() {
     <div class="space-y-8">
       {/* Toast Notification */}
       <Show when={showNotification()}>
-        <div class="fixed bottom-6 right-6 z-50 bg-slate-900 border border-sky-500/60 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 animate-toast pointer-events-none transform-gpu">
-          <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-          <span class="text-sm font-medium">{notificationMsg()}</span>
-        </div>
+        <Portal>
+          <div class="fixed bottom-6 right-6 z-50 bg-slate-900 border border-sky-500/60 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 animate-toast pointer-events-none transform-gpu">
+            <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <span class="text-sm font-medium">{notificationMsg()}</span>
+          </div>
+        </Portal>
       </Show>
 
       {/* Task Group Breakdown Modal */}

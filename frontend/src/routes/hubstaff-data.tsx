@@ -1,4 +1,5 @@
 import { createSignal, For, Show, onMount, onCleanup } from "solid-js";
+import { Portal } from "solid-js/web";
 import {
   hubstaffEvents,
   syncHubstaffTrackingStatesFromBackend,
@@ -152,12 +153,14 @@ export default function HubstaffDataPage() {
     <div class="space-y-8">
       {/* Toast Notification */}
       <Show when={toastMsg()}>
-        <div class="fixed bottom-6 right-6 z-50 bg-emerald-950 border border-emerald-500/60 text-emerald-200 px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 animate-toast pointer-events-none transform-gpu">
-          <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
-          </svg>
-          <span class="text-sm font-medium">{toastMsg()}</span>
-        </div>
+        <Portal>
+          <div class="fixed bottom-6 right-6 z-50 bg-emerald-950 border border-emerald-500/60 text-emerald-200 px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 animate-toast pointer-events-none transform-gpu">
+            <svg class="w-5 h-5 text-emerald-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+            </svg>
+            <span class="text-sm font-medium">{toastMsg()}</span>
+          </div>
+        </Portal>
       </Show>
 
       {/* Header & Sync Button */}

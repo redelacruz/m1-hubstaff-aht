@@ -18,6 +18,7 @@ from app.models import (
     Project,
     WebhookSubscription,
     HubstaffTimeAdjustment,
+    TaskGroup,
 )
 from app.services.hubstaff import (
     exchange_pat_for_tokens,
@@ -460,7 +461,6 @@ async def disconnect_hubstaff_account(db: AsyncSession = Depends(get_db)):
     await db.execute(delete(HubstaffCredential))
     await db.execute(delete(User))
     await db.commit()
-
     return {
         "connected": False,
         "is_locked": False,
@@ -473,8 +473,8 @@ class TaskLogCreateRequest(BaseModel):
     role: str
     subrole: str
     title: str
-    url: Optional[str] = None
-    notes: Optional[str] = None
+    url: Optional[str] = ""
+    notes: Optional[str] = ""
     duration_seconds: int = 0
     timer_mode: str = "hubstaff"
     is_manual_entry: bool = False
@@ -502,6 +502,7 @@ async def get_task_logs(db: AsyncSession = Depends(get_db)):
             {
                 "id": t.id,
                 "userId": t.user_id,
+                "taskGroupId": t.task_group_id,
                 "role": t.role,
                 "subrole": t.subrole,
                 "title": t.title,
@@ -543,9 +544,42 @@ async def create_task_log(request: TaskLogCreateRequest, db: AsyncSession = Depe
         except Exception:
             pass
 
+    # Resolve or create TaskGroup if title is not Administrative Time
+    group_id = None
+    if request.title != "Administrative Time":
+        group_stmt = select(TaskGroup).where(
+            TaskGroup.user_id == user.id,
+            TaskGroup.subrole == request.subrole,
+            TaskGroup.title == request.title,
+        )
+        group_res = await db.execute(group_stmt)
+        group = group_res.scalar_one_or_none()
+
+        if not group:
+            group_id = f"tg_{int(datetime.now().timestamp()*1000)}"
+            group = TaskGroup(
+                id=group_id,
+                user_id=user.id,
+                role=request.role,
+                subrole=request.subrole,
+                title=request.title,
+                url=request.url or "",
+                notes=request.notes or "",
+            )
+            db.add(group)
+            await db.flush()
+        else:
+            group_id = group.id
+            if request.url:
+                group.url = request.url
+            if request.notes:
+                group.notes = request.notes
+            group.role = request.role
+
     task = TaskLog(
         id=task_id,
         user_id=user.id,
+        task_group_id=group_id,
         role=request.role,
         subrole=request.subrole,
         title=request.title,
@@ -563,6 +597,7 @@ async def create_task_log(request: TaskLogCreateRequest, db: AsyncSession = Depe
         "task": {
             "id": task.id,
             "userId": task.user_id,
+            "taskGroupId": task.task_group_id,
             "role": task.role,
             "subrole": task.subrole,
             "title": task.title,
@@ -583,16 +618,77 @@ async def update_task_log_endpoint(task_id: str, request: TaskLogUpdateRequest, 
     if not task:
         raise HTTPException(status_code=404, detail="Task log entry not found.")
 
-    if request.role is not None:
-        task.role = request.role
-    if request.subrole is not None:
-        task.subrole = request.subrole
-    if request.title is not None:
-        task.title = request.title
-    if request.url is not None:
-        task.url = request.url
-    if request.notes is not None:
-        task.notes = request.notes
+    new_subrole = request.subrole if request.subrole is not None else task.subrole
+    new_title = request.title if request.title is not None else task.title
+    new_role = request.role if request.role is not None else task.role
+    new_url = request.url if request.url is not None else task.url
+    new_notes = request.notes if request.notes is not None else task.notes
+
+    # Check if title/subrole changed (popping out or joining different group)
+    title_or_subrole_changed = (new_title != task.title or new_subrole != task.subrole)
+
+    if title_or_subrole_changed and new_title != "Administrative Time":
+        group_stmt = select(TaskGroup).where(
+            TaskGroup.user_id == task.user_id,
+            TaskGroup.subrole == new_subrole,
+            TaskGroup.title == new_title,
+        )
+        group_res = await db.execute(group_stmt)
+        group = group_res.scalar_one_or_none()
+
+        if not group:
+            group_id = f"tg_{int(datetime.now().timestamp()*1000)}"
+            group = TaskGroup(
+                id=group_id,
+                user_id=task.user_id,
+                role=new_role,
+                subrole=new_subrole,
+                title=new_title,
+                url=new_url or "",
+                notes=new_notes or "",
+            )
+            db.add(group)
+            await db.flush()
+        
+        task.task_group_id = group.id
+        task.title = new_title
+        task.subrole = new_subrole
+        task.role = new_role
+        task.url = new_url
+        task.notes = new_notes
+    elif task.task_group_id and not title_or_subrole_changed:
+        # Propagate shared field updates (url, notes, role) across all tasks in the task group!
+        group_res = await db.execute(select(TaskGroup).where(TaskGroup.id == task.task_group_id))
+        group = group_res.scalar_one_or_none()
+        if group:
+            if request.url is not None:
+                group.url = request.url
+            if request.notes is not None:
+                group.notes = request.notes
+            if request.role is not None:
+                group.role = request.role
+
+        # Update all linked TaskLog rows
+        group_tasks_res = await db.execute(select(TaskLog).where(TaskLog.task_group_id == task.task_group_id))
+        for t in group_tasks_res.scalars().all():
+            if request.role is not None:
+                t.role = request.role
+            if request.url is not None:
+                t.url = request.url
+            if request.notes is not None:
+                t.notes = request.notes
+    else:
+        if request.role is not None:
+            task.role = request.role
+        if request.subrole is not None:
+            task.subrole = request.subrole
+        if request.title is not None:
+            task.title = request.title
+        if request.url is not None:
+            task.url = request.url
+        if request.notes is not None:
+            task.notes = request.notes
+
     if request.duration_seconds is not None:
         task.duration_seconds = request.duration_seconds
     if request.timer_mode is not None:
@@ -614,8 +710,16 @@ async def delete_task_log_endpoint(task_id: str, db: AsyncSession = Depends(get_
     result = await db.execute(select(TaskLog).where(TaskLog.id == task_id))
     task = result.scalar_one_or_none()
     if task:
+        group_id = task.task_group_id
         await db.delete(task)
         await db.commit()
+
+        # Clean up task group if no remaining logs
+        if group_id:
+            rem_res = await db.execute(select(func.count(TaskLog.id)).where(TaskLog.task_group_id == group_id))
+            if (rem_res.scalar() or 0) == 0:
+                await db.execute(delete(TaskGroup).where(TaskGroup.id == group_id))
+                await db.commit()
     return {"success": True, "message": "Task log deleted."}
 
 

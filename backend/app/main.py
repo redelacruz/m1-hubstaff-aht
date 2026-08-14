@@ -113,12 +113,53 @@ async def lifespan(app: FastAPI):
         )
         await conn.execute(
             text(
+                "CREATE TABLE IF NOT EXISTS task_groups ("
+                "id VARCHAR(50) PRIMARY KEY, "
+                "user_id VARCHAR(50) NOT NULL REFERENCES users(id) ON DELETE CASCADE, "
+                "role VARCHAR(20) NOT NULL, "
+                "subrole VARCHAR(50) NOT NULL, "
+                "title VARCHAR(255) NOT NULL, "
+                "url VARCHAR(500), "
+                "notes TEXT, "
+                "created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP, "
+                "updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP"
+                ");"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE task_logs ADD COLUMN IF NOT EXISTS task_group_id VARCHAR(50) REFERENCES task_groups(id) ON DELETE SET NULL;"
+            )
+        )
+        await conn.execute(
+            text(
+                "CREATE INDEX IF NOT EXISTS ix_task_groups_user_subrole_title ON task_groups (user_id, subrole, title);"
+            )
+        )
+        await conn.execute(
+            text(
                 "CREATE INDEX IF NOT EXISTS ix_task_logs_title ON task_logs (title);"
             )
         )
         await conn.execute(
             text(
                 "CREATE INDEX IF NOT EXISTS ix_task_logs_title_role ON task_logs (title, role);"
+            )
+        )
+        # Backfill task_groups for any legacy task_logs where task_group_id is null
+        await conn.execute(
+            text(
+                "INSERT INTO task_groups (id, user_id, role, subrole, title, url, notes, created_at, updated_at) "
+                "SELECT 'tg_' || MD5(user_id || subrole || title), user_id, role, subrole, title, MAX(url), MAX(notes), MIN(created_at), MAX(updated_at) "
+                "FROM task_logs WHERE task_group_id IS NULL AND title != 'Administrative Time' "
+                "GROUP BY user_id, role, subrole, title "
+                "ON CONFLICT (id) DO NOTHING;"
+            )
+        )
+        await conn.execute(
+            text(
+                "UPDATE task_logs SET task_group_id = 'tg_' || MD5(user_id || subrole || title) "
+                "WHERE task_group_id IS NULL AND title != 'Administrative Time';"
             )
         )
 

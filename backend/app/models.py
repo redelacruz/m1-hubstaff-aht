@@ -141,12 +141,41 @@ class HubstaffEvent(Base):
     project: Mapped["Project"] = relationship("Project", back_populates="hubstaff_events")
 
 
+class TaskGroup(Base):
+    __tablename__ = "task_groups"
+
+    id: Mapped[str] = mapped_column(String(50), primary_key=True)
+    user_id: Mapped[str] = mapped_column(
+        String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    subrole: Mapped[str] = mapped_column(String(50), nullable=False)
+    title: Mapped[str] = mapped_column(String(255), index=True, nullable=False)
+    url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    # Relationships
+    user: Mapped["User"] = relationship("User")
+    task_logs: Mapped[list["TaskLog"]] = relationship(
+        "TaskLog", back_populates="task_group", cascade="all, delete-orphan"
+    )
+
+
 class TaskLog(Base):
     __tablename__ = "task_logs"
 
     id: Mapped[str] = mapped_column(String(50), primary_key=True)
     user_id: Mapped[str] = mapped_column(
         String(50), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    task_group_id: Mapped[Optional[str]] = mapped_column(
+        String(50), ForeignKey("task_groups.id", ondelete="SET NULL"), nullable=True
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # 'Trainer' or 'Reviewer'
     subrole: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -165,6 +194,7 @@ class TaskLog(Base):
 
     # Relationships
     user: Mapped["User"] = relationship("User", back_populates="task_logs")
+    task_group: Mapped[Optional["TaskGroup"]] = relationship("TaskGroup", back_populates="task_logs")
 
 
 class UserSettings(Base):

@@ -2,7 +2,7 @@ import { createStore } from "solid-js/store";
 import { createSignal } from "solid-js";
 
 export type Role = "Trainer" | "Reviewer";
-export type Subrole = "Trainer 1" | "Trainer 2" | "Completion Reviewer" | "Quality Reviewer";
+export type Subrole = "Trainer 1" | "Trainer 2" | "Completion Reviewer" | "Quality Reviewer" | "Administrative";
 export type TimerMode = "hubstaff" | "untracked";
 
 export const SUBROLES_BY_ROLE: Record<Role, Subrole[]> = {
@@ -31,6 +31,7 @@ export interface UserSettings {
 export interface TaskLogEntry {
   id: string;
   userId: string;
+  taskGroupId?: string;
   role: Role;
   subrole: Subrole;
   title: string;
@@ -40,6 +41,19 @@ export interface TaskLogEntry {
   timerMode: TimerMode;
   isManualEntry?: boolean;
   createdAt: string; // ISO string
+}
+
+export interface ActiveTaskingSession {
+  isTasking: boolean;
+  role: Role;
+  subrole: Subrole;
+  title: string;
+  url: string;
+  notes: string;
+  startTimeMs?: number;
+  timerStartMs?: number;
+  lastTimerStopMs?: number;
+  sessionSegmentIds?: string[];
 }
 
 export interface HubstaffEvent {
@@ -165,6 +179,63 @@ export const [hubstaffEvents, setHubstaffEvents] = createStore<HubstaffEvent[]>(
 export const [hubstaffTime, setHubstaffTime] = createStore<HubstaffTimeRecord>(initialState.hubstaffTime);
 export const [timeAdjustments, setTimeAdjustments] = createStore<HubstaffTimeAdjustment[]>([]);
 
+const ACTIVE_TASKING_STORAGE_KEY = "hubstaff_active_tasking_session_v1";
+
+const loadInitialActiveTasking = (): ActiveTaskingSession => {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const saved = localStorage.getItem(ACTIVE_TASKING_STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.warn("Error loading active tasking session from localStorage:", e);
+    }
+  }
+  return {
+    isTasking: false,
+    role: "Reviewer",
+    subrole: "Completion Reviewer",
+    title: "",
+    url: "",
+    notes: "",
+    sessionSegmentIds: [],
+  };
+};
+
+export const [activeTasking, setActiveTasking] = createStore<ActiveTaskingSession>(loadInitialActiveTasking());
+
+export const updateActiveTasking = (fields: Partial<ActiveTaskingSession>) => {
+  setActiveTasking(fields);
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      localStorage.setItem(ACTIVE_TASKING_STORAGE_KEY, JSON.stringify(activeTasking));
+    } catch (e) {
+      console.warn("Error saving active tasking session to localStorage:", e);
+    }
+  }
+};
+
+export const clearActiveTasking = () => {
+  setActiveTasking({
+    isTasking: false,
+    role: "Reviewer",
+    subrole: "Completion Reviewer",
+    title: "",
+    url: "",
+    notes: "",
+    startTimeMs: undefined,
+    timerStartMs: undefined,
+    lastTimerStopMs: undefined,
+    sessionSegmentIds: [],
+  });
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      localStorage.removeItem(ACTIVE_TASKING_STORAGE_KEY);
+    } catch (e) {}
+  }
+};
+
 export const [hubstaffStatus, setHubstaffStatus] = createSignal<HubstaffAuthStatus>({
   isConnected: true,
   isLocked: true,
@@ -289,7 +360,7 @@ export const addHubstaffTime = (role: Role, additionalSeconds: number) => {
 export const addTaskLog = (
   entry: Omit<TaskLogEntry, "id" | "userId" | "createdAt"> & { id?: string },
   addToHubstaffTime: boolean = true
-) => {
+): TaskLogEntry => {
   const currentUserId = hubstaffStatus().user?.id || DEFAULT_USER.id;
   const newTask: TaskLogEntry = {
     ...entry,
@@ -305,6 +376,7 @@ export const addTaskLog = (
   setTasks((prev: TaskLogEntry[]) => [newTask, ...prev]);
   saveStateToLocalStorage();
   saveTaskToBackend(newTask);
+  return newTask;
 };
 
 export const fetchTaskLogsFromBackend = async () => {
@@ -963,7 +1035,9 @@ export const calculateHubstaffBilledSecondsFromEvents = (
 
 export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown => {
   const filteredTasks = getFilteredTasks(roleFilter, "global");
-  const taskCount = filteredTasks.length;
+  const nonAdminTasks = filteredTasks.filter((t) => t.title !== "Administrative Time");
+  const uniqueTaskGroups = new Set(nonAdminTasks.map((t) => t.taskGroupId || `${t.subrole}:::${t.title}`));
+  const taskCount = uniqueTaskGroups.size;
 
   const billedCalc = calculateHubstaffBilledSecondsFromEvents(roleFilter);
   const totalHubstaffSeconds = billedCalc.totalSeconds;

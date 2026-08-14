@@ -1,45 +1,63 @@
-import { createSignal, For, Show } from "solid-js";
+import { createSignal, createEffect, For, Show } from "solid-js";
 import {
   Role,
-  Subrole,
   TaskLogEntry,
   tasks,
-  settings,
-  updateUserSettings,
   updateTaskLog,
   deleteTaskLog,
-  addManualTaskLog,
-  formatDuration,
   formatTaskDuration,
   getUserAvailableRoles,
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
-import { AddManualTaskModal } from "../components/AddManualTaskModal";
+import { TaskGroupModal } from "../components/TaskGroupModal";
 
 export default function TaskLogPage() {
+  // Filters & State
   const [roleFilter, setRoleFilter] = createSignal<Role | "All">("All");
   const [searchQuery, setSearchQuery] = createSignal<string>("");
   const [currentPage, setCurrentPage] = createSignal<number>(1);
-  const [pageSize, setPageSize] = createSignal<number>(settings.pageSize || 25);
+  const [pageSize, setPageSize] = createSignal<number>(25);
 
-  // Modal Signals
+  // Toast Signal
+  const [showNotification, setShowNotification] = createSignal<boolean>(false);
+  const [notificationMsg, setNotificationMsg] = createSignal<string>("");
+
+  // Edit Modal Signals
   const [editingTask, setEditingTask] = createSignal<TaskLogEntry | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = createSignal<boolean>(false);
-  const [isAddModalOpen, setIsAddModalOpen] = createSignal<boolean>(false);
-  const [toastMsg, setToastMsg] = createSignal<string>("");
 
-  const handlePageSizeChange = (size: number) => {
-    setPageSize(size);
-    updateUserSettings({ pageSize: size });
-    setCurrentPage(1);
+  // Task Group Modal Signals
+  const [isGroupModalOpen, setIsGroupModalOpen] = createSignal<boolean>(false);
+  const [activeGroupData, setActiveGroupData] = createSignal<{
+    subrole: string;
+    title: string;
+    tasks: TaskLogEntry[];
+  }>({ subrole: "", title: "", tasks: [] });
+
+  const openGroupModal = (subrole: string, title: string) => {
+    const groupTasks = tasks.filter((t) => t.subrole === subrole && t.title === title && t.title !== "Administrative Time");
+    setActiveGroupData({ subrole, title, tasks: groupTasks });
+    setIsGroupModalOpen(true);
+  };
+
+  const openEditModal = (task: TaskLogEntry) => {
+    setEditingTask(task);
+    setIsEditModalOpen(true);
+  };
+
+  const handleSaveEditedTask = (id: string, updatedFields: Partial<TaskLogEntry>) => {
+    updateTaskLog(id, updatedFields);
+    setNotificationMsg("Task details updated successfully.");
+    setShowNotification(true);
+    setTimeout(() => setShowNotification(false), 3000);
   };
 
   const filteredTasks = () => {
+    const rFilter = roleFilter();
     const query = searchQuery().toLowerCase().trim();
-    const r = roleFilter();
 
     return tasks.filter((t) => {
-      if (r !== "All" && t.role !== r) return false;
+      if (rFilter !== "All" && t.role !== rFilter) return false;
       if (query) {
         const titleMatch = t.title.toLowerCase().includes(query);
         const notesMatch = t.notes.toLowerCase().includes(query);
@@ -57,47 +75,40 @@ export default function TaskLogPage() {
     return filteredTasks().slice(start, start + pageSize());
   };
 
-  const openEditModal = (task: TaskLogEntry) => {
-    setEditingTask(task);
-    setIsEditModalOpen(true);
-  };
-
-  const handleSaveEditedTask = (id: string, updatedFields: Partial<TaskLogEntry>) => {
-    updateTaskLog(id, updatedFields);
-    setToastMsg("Task log item updated successfully.");
-    setTimeout(() => setToastMsg(""), 3000);
-  };
-
-  const handleAddManualTask = (taskData: {
-    role: Role;
-    subrole: Subrole;
-    title: string;
-    url: string;
-    notes: string;
-    startTime?: string;
-    endTime?: string;
-    taskDate?: string;
-    durationMinutes?: number;
-    isUntracked: boolean;
-  }) => {
-    const result = addManualTaskLog(taskData);
-    setToastMsg(result.message);
-    setTimeout(() => setToastMsg(""), 3500);
+  const handlePageSizeChange = (newSize: number) => {
+    setPageSize(newSize);
+    setCurrentPage(1);
   };
 
   return (
     <div class="space-y-8">
       {/* Toast Notification */}
-      <Show when={toastMsg()}>
+      <Show when={showNotification()}>
         <div class="fixed bottom-6 right-6 z-50 bg-slate-900 border border-sky-500/60 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center space-x-3 animate-bounce">
           <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
           </svg>
-          <span class="text-sm font-medium">{toastMsg()}</span>
+          <span class="text-sm font-medium">{notificationMsg()}</span>
         </div>
       </Show>
 
-      {/* Edit Modal */}
+      {/* Task Group Breakdown Modal */}
+      <TaskGroupModal
+        isOpen={isGroupModalOpen()}
+        subrole={activeGroupData().subrole}
+        title={activeGroupData().title}
+        groupTasks={activeGroupData().tasks}
+        onClose={() => setIsGroupModalOpen(false)}
+        onEditTask={openEditModal}
+        onDeleteTask={(id) => {
+          deleteTaskLog(id);
+          const updated = tasks.filter((t) => t.subrole === activeGroupData().subrole && t.title === activeGroupData().title && t.title !== "Administrative Time");
+          if (updated.length === 0) setIsGroupModalOpen(false);
+          else setActiveGroupData((prev) => ({ ...prev, tasks: updated }));
+        }}
+      />
+
+      {/* Edit Task Modal */}
       <EditTaskModal
         task={editingTask()}
         isOpen={isEditModalOpen()}
@@ -105,97 +116,85 @@ export default function TaskLogPage() {
         onSave={handleSaveEditedTask}
       />
 
-      {/* Add Manual Task Modal */}
-      <AddManualTaskModal
-        isOpen={isAddModalOpen()}
-        onClose={() => setIsAddModalOpen(false)}
-        onAdd={handleAddManualTask}
-      />
-
-      {/* Header */}
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6">
-        <div>
-          <div class="flex items-center space-x-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 10h16M4 14h16M4 18h16" />
-            </svg>
-            <span>Complete Audit Repository</span>
+      {/* Header Banner */}
+      <div class="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-900/40 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div class="flex items-center space-x-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              <span>Complete Historical Log</span>
+            </div>
+            <h1 class="text-2xl font-extrabold text-white tracking-tight">Task Log Directory</h1>
+            <p class="text-slate-400 text-sm mt-1 max-w-2xl">
+              Inspect all submitted task entries, task groups, durations, and notes across all roles and sessions.
+            </p>
           </div>
-          <h1 class="text-2xl font-extrabold text-white tracking-tight">Full Task Log Directory</h1>
-          <p class="text-slate-400 text-sm mt-1">
-            View, search, edit, and paginate all submitted task logs across roles.
-          </p>
-        </div>
 
-        {/* Action Buttons */}
-        <div class="flex items-center space-x-3">
-          <button
-            onClick={() => setIsAddModalOpen(true)}
-            class="px-4 py-2.5 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold text-xs rounded-xl shadow-lg shadow-sky-950 transition-all flex items-center space-x-1.5"
-          >
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-            </svg>
-            <span>Add Manual Task</span>
-          </button>
+          <div class="text-right">
+            <span class="text-xs text-slate-400 block">Total Logged Entries:</span>
+            <span class="text-xl font-extrabold text-white font-mono">{tasks.length} Logs</span>
+          </div>
         </div>
       </div>
 
       {/* Main Table Container */}
-      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+      <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
         
-        {/* Controls Bar */}
+        {/* Filter Controls Bar */}
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
-          
-          {/* Search & Role Filters */}
           <div class="flex flex-wrap items-center gap-3">
-            <div class="relative min-w-[220px]">
+            {/* Search Input */}
+            <div>
+              <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Search Tasks</label>
               <input
                 type="text"
-                placeholder="Search title, notes, subrole..."
+                placeholder="Search title, subrole, notes..."
                 value={searchQuery()}
                 onInput={(e) => {
                   setSearchQuery(e.currentTarget.value);
                   setCurrentPage(1);
                 }}
-                class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-9 pr-3 py-2 text-xs text-slate-200 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                class="bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-1.5 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 min-w-[220px]"
               />
-              <svg class="w-4 h-4 text-slate-500 absolute left-3 top-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
             </div>
 
+            {/* Role Filter Buttons */}
             <Show when={getUserAvailableRoles().length > 1 || (tasks.some((t) => t.role === "Trainer") && tasks.some((t) => t.role === "Reviewer"))}>
-              <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-xs">
-                <button
-                  onClick={() => { setRoleFilter("All"); setCurrentPage(1); }}
-                  class={`px-3 py-1 rounded-lg transition-all ${
-                    roleFilter() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
-                  }`}
-                >
-                  All Roles
-                </button>
-                <button
-                  onClick={() => { setRoleFilter("Trainer"); setCurrentPage(1); }}
-                  class={`px-3 py-1 rounded-lg transition-all ${
-                    roleFilter() === "Trainer" ? "bg-sky-600 text-white font-medium shadow-md shadow-sky-950" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Trainer
-                </button>
-                <button
-                  onClick={() => { setRoleFilter("Reviewer"); setCurrentPage(1); }}
-                  class={`px-3 py-1 rounded-lg transition-all ${
-                    roleFilter() === "Reviewer" ? "bg-purple-600 text-white font-medium shadow-md shadow-purple-950" : "text-slate-400 hover:text-slate-200"
-                  }`}
-                >
-                  Reviewer
-                </button>
+              <div>
+                <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-400 mb-1">Role Filter</label>
+                <div class="flex items-center space-x-1 bg-slate-950 border border-slate-800 p-1 rounded-lg text-xs">
+                  <button
+                    onClick={() => { setRoleFilter("All"); setCurrentPage(1); }}
+                    class={`px-3 py-1 rounded-lg transition-all ${
+                      roleFilter() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                    }`}
+                  >
+                    All Roles
+                  </button>
+                  <button
+                    onClick={() => { setRoleFilter("Trainer"); setCurrentPage(1); }}
+                    class={`px-3 py-1 rounded-lg transition-all ${
+                      roleFilter() === "Trainer" ? "bg-sky-600 text-white font-medium shadow-md shadow-sky-950" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Trainer
+                  </button>
+                  <button
+                    onClick={() => { setRoleFilter("Reviewer"); setCurrentPage(1); }}
+                    class={`px-3 py-1 rounded-lg transition-all ${
+                      roleFilter() === "Reviewer" ? "bg-purple-600 text-white font-medium shadow-md shadow-purple-950" : "text-slate-400 hover:text-slate-200"
+                    }`}
+                  >
+                    Reviewer
+                  </button>
+                </div>
               </div>
             </Show>
           </div>
 
-          {/* Items Per Page Dropdown Selector */}
+          {/* Items Per Page Selector */}
           <div class="flex items-center space-x-2 text-xs text-slate-400 self-end md:self-auto">
             <span>Items per page:</span>
             <select
@@ -235,101 +234,116 @@ export default function TaskLogPage() {
                 }
               >
                 <For each={paginatedTasks()}>
-                  {(task) => (
-                    <tr class="hover:bg-slate-800/40 transition-colors">
-                      <td class="py-3.5 px-4 whitespace-nowrap text-slate-400 font-mono">
-                        {new Date(task.createdAt).toLocaleString(undefined, {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
+                  {(task) => {
+                    const sameGroupTasks = () => tasks.filter((t) => t.subrole === task.subrole && t.title === task.title && t.title !== "Administrative Time");
+                    const isGroup = () => sameGroupTasks().length > 1;
 
-                      <td class="py-3.5 px-4 whitespace-nowrap">
-                        <div class="flex flex-col space-y-1">
-                          <span class={`w-max text-[10px] font-bold px-2 py-0.5 rounded border ${
-                            task.role === 'Trainer'
-                              ? 'bg-sky-950/80 text-sky-300 border-sky-800'
-                              : 'bg-purple-950/80 text-purple-300 border-purple-800'
-                          }`}>
-                            {task.role}
-                          </span>
-                          <span class="text-slate-300 font-medium">{task.subrole}</span>
-                        </div>
-                      </td>
+                    return (
+                      <tr class="hover:bg-slate-800/40 transition-colors">
+                        <td class="py-3.5 px-4 whitespace-nowrap text-slate-400 font-mono">
+                          {new Date(task.createdAt).toLocaleString(undefined, {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
 
-                      <td class="py-3.5 px-4 max-w-xs sm:max-w-md">
-                        <div class="font-semibold text-slate-100 text-sm">
-                          {task.title}
-                        </div>
-                        <Show when={task.url && task.url !== "#"}>
-                          <a
-                            href={task.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            class="text-[11px] text-sky-400 hover:underline inline-flex items-center space-x-1 mt-0.5"
-                          >
-                            <span>{task.url}</span>
-                          </a>
-                        </Show>
-                        <Show when={task.notes}>
-                          <p class="text-[11px] text-slate-400 mt-1 italic">
-                            "{task.notes}"
-                          </p>
-                        </Show>
-                      </td>
+                        <td class="py-3.5 px-4 whitespace-nowrap">
+                          <div class="flex flex-col space-y-1">
+                            <span class={`w-max text-[10px] font-bold px-2 py-0.5 rounded border ${
+                              task.role === 'Trainer'
+                                ? 'bg-sky-950/80 text-sky-300 border-sky-800'
+                                : 'bg-purple-950/80 text-purple-300 border-purple-800'
+                            }`}>
+                              {task.role}
+                            </span>
+                            <span class="text-slate-300 font-medium">{task.subrole}</span>
+                          </div>
+                        </td>
 
-                      <td class="py-3.5 px-4 whitespace-nowrap">
-                        <div class="flex flex-col space-y-1">
-                          <Show
-                            when={task.timerMode === "hubstaff"}
-                            fallback={
-                              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">
-                                Untracked Task
+                        <td class="py-3.5 px-4 max-w-xs sm:max-w-md">
+                          <div class="flex items-center space-x-2">
+                            <span class="font-semibold text-slate-100 text-sm">{task.title}</span>
+                            <Show when={isGroup()}>
+                              <button
+                                type="button"
+                                onClick={() => openGroupModal(task.subrole, task.title)}
+                                class="px-2 py-0.5 text-[10px] font-bold bg-sky-950/90 text-sky-300 border border-sky-700/80 hover:bg-sky-900 rounded-md transition-colors flex items-center space-x-1 cursor-pointer"
+                                title="Click to view task group breakdown and total time logged"
+                              >
+                                <span>🧩 Part of Group ({sameGroupTasks().length} logs)</span>
+                              </button>
+                            </Show>
+                          </div>
+                          <Show when={task.url && task.url !== "#"}>
+                            <a
+                              href={task.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              class="text-[11px] text-sky-400 hover:underline inline-flex items-center space-x-1 mt-0.5"
+                            >
+                              <span>{task.url}</span>
+                            </a>
+                          </Show>
+                          <Show when={task.notes}>
+                            <p class="text-[11px] text-slate-400 mt-1 italic">
+                              "{task.notes}"
+                            </p>
+                          </Show>
+                        </td>
+
+                        <td class="py-3.5 px-4 whitespace-nowrap">
+                          <div class="flex flex-col space-y-1">
+                            <Show
+                              when={task.timerMode === "hubstaff"}
+                              fallback={
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">
+                                  Untracked Task
+                                </span>
+                              }
+                            >
+                              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
+                                Hubstaff Active
                               </span>
-                            }
+                            </Show>
+                            <Show when={task.isManualEntry}>
+                              <span class="w-max text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-sky-800 text-sky-300">
+                                🖊️ Manual Entry
+                              </span>
+                            </Show>
+                          </div>
+                        </td>
+
+                        <td class="py-3.5 px-4 whitespace-nowrap font-mono">
+                          <div class="text-sm font-bold text-white">
+                            {task.timerMode === "untracked" ? "00:00 (0m)" : formatTaskDuration(task.durationSeconds)}
+                          </div>
+                        </td>
+
+                        <td class="py-3.5 px-4 text-right whitespace-nowrap space-x-1">
+                          <button
+                            onClick={() => openEditModal(task)}
+                            title="Edit task entry details"
+                            class="text-sky-400 hover:text-sky-300 p-1.5 rounded hover:bg-sky-950/40 transition-colors"
                           >
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
-                              Hubstaff Active
-                            </span>
-                          </Show>
-                          <Show when={task.isManualEntry}>
-                            <span class="w-max text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-sky-800 text-sky-300">
-                              🖊️ Manual Entry
-                            </span>
-                          </Show>
-                        </div>
-                      </td>
-
-                      <td class="py-3.5 px-4 whitespace-nowrap font-mono">
-                        <div class="text-sm font-bold text-white">
-                          {task.timerMode === "untracked" ? "00:00 (0m)" : formatTaskDuration(task.durationSeconds)}
-                        </div>
-                      </td>
-
-                      <td class="py-3.5 px-4 text-right whitespace-nowrap space-x-1">
-                        <button
-                          onClick={() => openEditModal(task)}
-                          title="Edit task entry details"
-                          class="text-sky-400 hover:text-sky-300 p-1.5 rounded hover:bg-sky-950/40 transition-colors"
-                        >
-                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => deleteTaskLog(task.id)}
-                          title="Delete task entry"
-                          class="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-950/40 transition-colors"
-                        >
-                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </td>
-                    </tr>
-                  )}
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => deleteTaskLog(task.id)}
+                            title="Delete task entry"
+                            class="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-950/40 transition-colors"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  }}
                 </For>
               </Show>
             </tbody>

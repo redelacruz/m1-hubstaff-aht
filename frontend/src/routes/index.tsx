@@ -19,9 +19,14 @@ import {
   getEffectiveUserRole,
   calculateHubstaffBilledSecondsFromEvents,
   parseRoleFromProjectName,
-  fetchLocalHubstaffEvents
+  fetchLocalHubstaffEvents,
+  activeTasking,
+  updateActiveTasking,
+  clearActiveTasking,
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
+import { ConfirmationModal } from "../components/ConfirmationModal";
+import { TaskGroupModal } from "../components/TaskGroupModal";
 
 export default function Home() {
   // Poll local Hubstaff events every 3 seconds for real-time timer updates
@@ -41,54 +46,35 @@ export default function Home() {
   const [taskTitle, setTaskTitle] = createSignal<string>("");
   const [taskUrl, setTaskUrl] = createSignal<string>("");
   const [taskNotes, setTaskNotes] = createSignal<string>("");
-  const [timerMode, setTimerMode] = createSignal<TimerMode>("hubstaff");
+
+  // Lock overrides for double-clicking partially locked fields
+  const [unlockedFields, setUnlockedFields] = createSignal({
+    role: false,
+    subrole: false,
+    title: false,
+    url: false,
+  });
 
   const activeBilledInfo = createMemo(() => calculateHubstaffBilledSecondsFromEvents("All"));
-  const [liveElapsedSeconds, setLiveElapsedSeconds] = createSignal(0);
 
+  // Keep form inputs synced with activeTasking when active
+  createEffect(() => {
+    if (activeTasking.isTasking) {
+      if (activeTasking.role) setSelectedRole(activeTasking.role);
+      if (activeTasking.subrole) setSelectedSubrole(activeTasking.subrole);
+      if (activeTasking.title) setTaskTitle(activeTasking.title);
+      if (activeTasking.url !== undefined) setTaskUrl(activeTasking.url);
+      if (activeTasking.notes !== undefined) setTaskNotes(activeTasking.notes);
+    }
+  });
+
+  // Lock role to timer project if Hubstaff timer is running
   createEffect(() => {
     const info = activeBilledInfo();
-    if (info.activeTimer) {
-      setTimerMode("hubstaff");
-      if (info.activeProjectName) {
-        setSelectedRole(parseRoleFromProjectName(info.activeProjectName));
-      }
-    } else {
-      setTimerMode("untracked");
-      setLiveElapsedSeconds(0);
+    if (info.activeTimer && info.activeProjectName) {
+      setSelectedRole(parseRoleFromProjectName(info.activeProjectName));
     }
   });
-
-  createEffect(() => {
-    const info = activeBilledInfo();
-    if (info.activeTimer && info.activeStartMs) {
-      const updateTime = () => {
-        setLiveElapsedSeconds(Math.max(0, Math.round((Date.now() - info.activeStartMs!) / 1000)));
-      };
-      updateTime();
-      const interval = setInterval(updateTime, 1000);
-      onCleanup(() => clearInterval(interval));
-    }
-  });
-
-  // Keep selected role synced with effective role if single role
-  createEffect(() => {
-    if (activeBilledInfo().activeTimer) return;
-    const available = getUserAvailableRoles();
-    if (available.length === 1 && selectedRole() !== available[0]) {
-      setSelectedRole(available[0]);
-    }
-  });
-
-  // Filters & Toast
-  const [logFilterRole, setLogFilterRole] = createSignal<Role | "All">("All");
-  const [searchQuery, setSearchQuery] = createSignal<string>("");
-  const [showNotification, setShowNotification] = createSignal<boolean>(false);
-  const [notificationMsg, setNotificationMsg] = createSignal<string>("");
-
-  // Edit Modal Signals
-  const [editingTask, setEditingTask] = createSignal<TaskLogEntry | null>(null);
-  const [isEditModalOpen, setIsEditModalOpen] = createSignal<boolean>(false);
 
   // Automatically update subrole options when role changes
   createEffect(() => {
@@ -99,46 +85,339 @@ export default function Home() {
     }
   });
 
-  const currentGlobalAHT = () => calculateGlobalAHT(selectedRole());
-  const currentRoleThresholds = () => settings.thresholds[selectedRole()];
+  // Filters & Notifications
+  const [logFilterRole, setLogFilterRole] = createSignal<Role | "All">("All");
+  const [searchQuery, setSearchQuery] = createSignal<string>("");
+  const [showNotification, setShowNotification] = createSignal<boolean>(false);
+  const [notificationMsg, setNotificationMsg] = createSignal<string>("");
 
-  const currentAHTStatus = () => {
-    const aht = currentGlobalAHT();
-    const thresholds = currentRoleThresholds();
-    return getAhtStatus(aht.globalAhtMinutes, thresholds.expectedAhtMinutes, thresholds.maxAhtMinutes);
-  };
+  // Modals
+  const [editingTask, setEditingTask] = createSignal<TaskLogEntry | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = createSignal<boolean>(false);
 
-  const handleTaskSubmit = (e: Event) => {
+  const [isCancelModalOpen, setIsCancelModalOpen] = createSignal<boolean>(false);
+
+  const [isGroupModalOpen, setIsGroupModalOpen] = createSignal<boolean>(false);
+  const [activeGroupData, setActiveGroupData] = createSignal<{
+    subrole: string;
+    title: string;
+    tasks: TaskLogEntry[];
+  }>({ subrole: "", title: "", tasks: [] });
+
+  // Monitor Hubstaff Timer transitions during Active Tasking mode
+  let previousTimerState = false;
+  let lastEndTaskLogMs = 0;
+
+  createEffect(() => {
+    const isTimerRunning = activeBilledInfo().activeTimer;
+    const info = activeBilledInfo();
+
+    // Timer just STARTED
+    if (isTimerRunning && !previousTimerState) {
+      if (activeTasking.isTasking) {
+        if (!activeTasking.timerStartMs) {
+          const startMs = info.activeStartMs || Date.now();
+          updateActiveTasking({ timerStartMs: startMs });
+        }
+      }
+    }
+
+    // Timer just STOPPED while in Active Tasking mode -> Commit segment to DB
+    if (!isTimerRunning && previousTimerState) {
+      if (activeTasking.isTasking && activeTasking.timerStartMs) {
+        const segSecs = Math.max(1, Math.round((Date.now() - activeTasking.timerStartMs) / 1000));
+        
+        // Check if there was a delayed timer start (>10m)
+        let segNotes = activeTasking.notes || "";
+        if (activeTasking.startTimeMs && (activeTasking.timerStartMs - activeTasking.startTimeMs) > 600000) {
+          const delaySecs = Math.round((activeTasking.timerStartMs - activeTasking.startTimeMs) / 1000);
+          segNotes += `\n[Note: ${formatDuration(delaySecs)} were spent working on the task before the Hubstaff timer was started.]`;
+        }
+
+        const newLog = addTaskLog({
+          role: activeTasking.role,
+          subrole: activeTasking.subrole,
+          title: activeTasking.title,
+          url: activeTasking.url,
+          notes: segNotes.trim(),
+          durationSeconds: segSecs,
+          timerMode: "hubstaff",
+        });
+
+        const updatedSegments = [...(activeTasking.sessionSegmentIds || []), newLog.id];
+        updateActiveTasking({
+          timerStartMs: undefined,
+          lastTimerStopMs: Date.now(),
+          sessionSegmentIds: updatedSegments,
+        });
+
+        setNotificationMsg(`Hubstaff timer stopped. Segment (${formatTaskDuration(segSecs)}) committed to task log.`);
+        setShowNotification(true);
+        setTimeout(() => setShowNotification(false), 3500);
+      }
+    }
+
+    previousTimerState = isTimerRunning;
+  });
+
+  // Calculate 6 Active Task Timer Visual States
+  const timerState = createMemo(() => {
+    const isTasking = activeTasking.isTasking;
+    const isTimerRunning = activeBilledInfo().activeTimer;
+    const info = activeBilledInfo();
+    const timerStartMs = info.activeStartMs;
+
+    const currentSubrole = isTasking ? activeTasking.subrole : selectedSubrole();
+    const currentTitle = isTasking ? activeTasking.title : taskTitle();
+
+    // Group logs for cumulative time calculation
+    const groupLogs = tasks.filter(
+      (t) => t.subrole === currentSubrole && t.title === currentTitle && t.title !== "Administrative Time"
+    );
+    const priorGroupSeconds = groupLogs.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
+
+    // State 1: Idle (No Hubstaff Timer & Not Active Tasking)
+    if (!isTasking && !isTimerRunning) {
+      return {
+        digitsColor: "text-white",
+        dotColor: "bg-white",
+        dotAnimate: false,
+        timerDisplay: "00:00",
+        headerText: "Idle (No Hubstaff Timer)",
+        subtextText: "Waiting for task or Hubstaff timer to start",
+        headerColor: "text-white",
+      };
+    }
+
+    // State 2: Actively Tasking (Hubstaff Timer Running)
+    if (isTasking && isTimerRunning) {
+      const currentSegmentSecs = timerStartMs ? Math.max(0, Math.round((Date.now() - timerStartMs) / 1000)) : 0;
+      const totalGroupSecs = priorGroupSeconds + currentSegmentSecs;
+      return {
+        digitsColor: "text-emerald-400",
+        dotColor: "bg-emerald-400",
+        dotAnimate: "animate-pulse",
+        timerDisplay: formatTaskDuration(totalGroupSecs),
+        headerText: "Actively Tasking (Hubstaff Timer Running)",
+        subtextText: "Tracking Hubstaff timer and submissions as normal",
+        headerColor: "text-emerald-400",
+      };
+    }
+
+    // State 3 & 4: Hubstaff Timer Running but NOT in Active Tasking Mode
+    if (!isTasking && isTimerRunning) {
+      const startOrEndMs = timerStartMs || lastEndTaskLogMs || Date.now();
+      const elapsedSecs = Math.max(0, Math.round((Date.now() - startOrEndMs) / 1000));
+      const elapsedMins = elapsedSecs / 60;
+
+      if (elapsedMins < 10) {
+        // State 3: Pre-Administrative Warning
+        return {
+          digitsColor: "text-amber-500",
+          dotColor: "bg-amber-500",
+          dotAnimate: "animate-pulse",
+          timerDisplay: formatTaskDuration(elapsedSecs),
+          headerText: "Not Logging Task (Hubstaff Timer Running)",
+          subtextText: "Warning: Hubstaff timer is running and affecting AHT",
+          headerColor: "text-amber-400",
+        };
+      } else {
+        // State 4: Administrative Mode
+        return {
+          digitsColor: "text-rose-500",
+          dotColor: "bg-rose-500",
+          dotAnimate: "animate-ping",
+          timerDisplay: formatTaskDuration(elapsedSecs),
+          headerText: "Administrative Time (Hubstaff Timer Running)",
+          subtextText: "Warning: Hubstaff timer is running and affecting AHT",
+          headerColor: "text-rose-400",
+        };
+      }
+    }
+
+    // State 5: Partially Tracked Task (Timer stopped or task worked on before)
+    if (isTasking && !isTimerRunning && priorGroupSeconds > 0) {
+      return {
+        digitsColor: "text-sky-400",
+        dotColor: "bg-sky-400",
+        dotAnimate: false,
+        timerDisplay: formatTaskDuration(priorGroupSeconds),
+        headerText: "Partially Tracked Task (Partial Hubstaff Timer)",
+        subtextText: "Note: Only the time displayed above will affect AHT",
+        headerColor: "text-sky-400",
+      };
+    }
+
+    // State 6: Untracked Task Mode (In Active Tasking mode, timer not running, 0 prior tracked seconds)
+    return {
+      digitsColor: "text-yellow-400",
+      dotColor: "bg-yellow-400",
+      dotAnimate: false,
+      timerDisplay: "00:00",
+      headerText: "Untracked Task (No Hubstaff Timer)",
+      subtextText: "Submissions increment task count and will decrease AHT",
+      headerColor: "text-yellow-400",
+    };
+  });
+
+  // Trigger Start Task Log
+  const handleStartTaskLog = (e: Event) => {
     e.preventDefault();
     if (!taskTitle().trim()) {
-      alert("Please enter a task title.");
+      alert("Please enter a task title to start logging.");
       return;
     }
 
-    const isUntracked = timerMode() === "untracked";
-    const durationInSeconds = isUntracked ? 0 : Math.max(30, liveElapsedSeconds());
+    const nowMs = Date.now();
+    const info = activeBilledInfo();
 
-    addTaskLog({
+    // Check pre-session timer state (>10m excess admin logging)
+    if (info.activeTimer && info.activeStartMs) {
+      const diffSecs = Math.round((nowMs - info.activeStartMs) / 1000);
+      if (diffSecs >= 600) {
+        addTaskLog({
+          role: selectedRole(),
+          subrole: "Administrative",
+          title: "Administrative Time",
+          url: "",
+          notes: "Pre-tasking excess Hubstaff timer duration logged as administrative time.",
+          durationSeconds: diffSecs - 600,
+          timerMode: "hubstaff",
+        });
+      }
+    }
+
+    // Check post-task gap (>10m gap since last End Task Log)
+    if (lastEndTaskLogMs > 0 && info.activeTimer) {
+      const gapSecs = Math.round((nowMs - lastEndTaskLogMs) / 1000);
+      if (gapSecs >= 600) {
+        addTaskLog({
+          role: selectedRole(),
+          subrole: "Administrative",
+          title: "Administrative Time",
+          url: "",
+          notes: "Gap between task logging sessions while Hubstaff timer was running.",
+          durationSeconds: gapSecs,
+          timerMode: "hubstaff",
+        });
+      }
+    }
+
+    updateActiveTasking({
+      isTasking: true,
       role: selectedRole(),
       subrole: selectedSubrole(),
       title: taskTitle().trim(),
-      url: taskUrl().trim() || "#",
+      url: taskUrl().trim(),
       notes: taskNotes().trim(),
-      durationSeconds: durationInSeconds,
-      timerMode: timerMode(),
+      startTimeMs: nowMs,
+      timerStartMs: info.activeTimer ? (info.activeStartMs || nowMs) : undefined,
+      lastTimerStopMs: undefined,
+      sessionSegmentIds: [],
     });
+
+    setUnlockedFields({ role: false, subrole: false, title: false, url: false });
+
+    setNotificationMsg(`Active Tasking Started: '${taskTitle().trim()}'`);
+    setShowNotification(true);
+    setTimeout(() => setShowNotification(false), 3000);
+  };
+
+  // Trigger End Task Log
+  const handleEndTaskLog = () => {
+    if (!activeTasking.isTasking) return;
+
+    const info = activeBilledInfo();
+    const nowMs = Date.now();
+
+    // If timer is currently running, log final segment
+    if (info.activeTimer && activeTasking.timerStartMs) {
+      const segSecs = Math.max(1, Math.round((nowMs - activeTasking.timerStartMs) / 1000));
+      
+      let finalNotes = taskNotes().trim();
+      if (activeTasking.startTimeMs && (activeTasking.timerStartMs - activeTasking.startTimeMs) > 600000) {
+        const delaySecs = Math.round((activeTasking.timerStartMs - activeTasking.startTimeMs) / 1000);
+        finalNotes += `\n[Note: ${formatDuration(delaySecs)} were spent working on the task before the Hubstaff timer was started.]`;
+      }
+
+      addTaskLog({
+        role: activeTasking.role,
+        subrole: activeTasking.subrole,
+        title: activeTasking.title,
+        url: activeTasking.url,
+        notes: finalNotes.trim(),
+        durationSeconds: segSecs,
+        timerMode: "hubstaff",
+      });
+    } else if (activeTasking.lastTimerStopMs && (nowMs - activeTasking.lastTimerStopMs) > 600000) {
+      // Timer stopped >10m ago before clicking End Task Log -> Append note
+      const stopDelaySecs = Math.round((nowMs - activeTasking.lastTimerStopMs) / 1000);
+      const appendNote = `\n[Note: ${formatDuration(stopDelaySecs)} were spent working on the task after the Hubstaff timer was stopped.]`;
+
+      // Update recent session log entries with appended note
+      const sessionIds = activeTasking.sessionSegmentIds || [];
+      if (sessionIds.length > 0) {
+        const lastId = sessionIds[sessionIds.length - 1];
+        const existingLog = tasks.find((t) => t.id === lastId);
+        if (existingLog) {
+          updateTaskLog(lastId, { notes: (existingLog.notes + appendNote).trim() });
+        }
+      }
+    } else if ((!activeTasking.sessionSegmentIds || activeTasking.sessionSegmentIds.length === 0) && !info.activeTimer) {
+      // Hubstaff timer NEVER ran -> Log as Untracked Task
+      addTaskLog({
+        role: activeTasking.role,
+        subrole: activeTasking.subrole,
+        title: activeTasking.title,
+        url: activeTasking.url,
+        notes: taskNotes().trim(),
+        durationSeconds: 0,
+        timerMode: "untracked",
+      });
+    }
+
+    lastEndTaskLogMs = nowMs;
+    const endedTitle = activeTasking.title;
+    clearActiveTasking();
 
     setTaskTitle("");
     setTaskUrl("");
     setTaskNotes("");
 
-    setNotificationMsg(
-      isUntracked
-        ? "Untracked task logged (Tasks +1, Hubstaff Hours +0)."
-        : "Task submitted and logged to Hubstaff tracked time."
-    );
+    setNotificationMsg(`Task Log Ended: '${endedTitle}' committed to history.`);
     setShowNotification(true);
     setTimeout(() => setShowNotification(false), 3500);
+  };
+
+  // Trigger Cancel Active Tasking
+  const confirmCancelTasking = () => {
+    const sessionIds = activeTasking.sessionSegmentIds || [];
+    
+    // Convert all session segments into Administrative Time
+    for (const id of sessionIds) {
+      updateTaskLog(id, {
+        title: "Administrative Time",
+        subrole: "Administrative",
+        url: "",
+        notes: "Tasking cancelled by user. Duration retained as Administrative Time.",
+      });
+    }
+
+    clearActiveTasking();
+    setTaskTitle("");
+    setTaskUrl("");
+    setTaskNotes("");
+    setIsCancelModalOpen(false);
+
+    setNotificationMsg("Active task session cancelled. Time logged as Administrative Time.");
+    setShowNotification(true);
+    setTimeout(() => setShowNotification(false), 3500);
+  };
+
+  const openGroupModal = (subrole: string, title: string) => {
+    const groupTasks = tasks.filter((t) => t.subrole === subrole && t.title === title && t.title !== "Administrative Time");
+    setActiveGroupData({ subrole, title, tasks: groupTasks });
+    setIsGroupModalOpen(true);
   };
 
   const openEditModal = (task: TaskLogEntry) => {
@@ -151,6 +430,15 @@ export default function Home() {
     setNotificationMsg("Task details updated successfully.");
     setShowNotification(true);
     setTimeout(() => setShowNotification(false), 3000);
+  };
+
+  const currentGlobalAHT = () => calculateGlobalAHT(selectedRole());
+  const currentRoleThresholds = () => settings.thresholds[selectedRole()];
+
+  const currentAHTStatus = () => {
+    const aht = currentGlobalAHT();
+    const thresholds = currentRoleThresholds();
+    return getAhtStatus(aht.globalAhtMinutes, thresholds.expectedAhtMinutes, thresholds.maxAhtMinutes);
   };
 
   // Truncated Task Log preview (Max 10 items)
@@ -169,7 +457,7 @@ export default function Home() {
       return true;
     });
 
-    return filtered.slice(0, 10); // Main page truncated at 10 items
+    return filtered.slice(0, 10);
   };
 
   return (
@@ -184,6 +472,34 @@ export default function Home() {
         </div>
       </Show>
 
+      {/* Cancel Confirmation Modal */}
+      <ConfirmationModal
+        isOpen={isCancelModalOpen()}
+        title="Cancel Active Tasking Session?"
+        warningText="Session time will be converted to Administrative Time"
+        description={`Are you sure you want to cancel tasking for '${activeTasking.title}'? Any Hubstaff timer segments tracked during this session will be converted to Administrative Time and will NOT count as a completed task.`}
+        confirmText="Yes, Cancel Task Session"
+        isDestructive={true}
+        onConfirm={confirmCancelTasking}
+        onCancel={() => setIsCancelModalOpen(false)}
+      />
+
+      {/* Task Group Breakdown Modal */}
+      <TaskGroupModal
+        isOpen={isGroupModalOpen()}
+        subrole={activeGroupData().subrole}
+        title={activeGroupData().title}
+        groupTasks={activeGroupData().tasks}
+        onClose={() => setIsGroupModalOpen(false)}
+        onEditTask={openEditModal}
+        onDeleteTask={(id) => {
+          deleteTaskLog(id);
+          const updated = tasks.filter((t) => t.subrole === activeGroupData().subrole && t.title === activeGroupData().title && t.title !== "Administrative Time");
+          if (updated.length === 0) setIsGroupModalOpen(false);
+          else setActiveGroupData((prev) => ({ ...prev, tasks: updated }));
+        }}
+      />
+
       {/* Edit Task Modal */}
       <EditTaskModal
         task={editingTask()}
@@ -196,7 +512,16 @@ export default function Home() {
       <div class="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-900/40 rounded-2xl p-6 shadow-xl relative overflow-hidden">
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
+            <div class="flex items-center space-x-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
+              <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+              <span>Real-Time Tasking Dashboard</span>
+            </div>
             <h1 class="text-2xl font-extrabold text-white tracking-tight">Active Handling Time Tracker</h1>
+            <p class="text-slate-400 text-sm mt-1 max-w-2xl">
+              Track task logs, manage active tasking sessions, and monitor real-time AHT performance.
+            </p>
           </div>
           <div class="flex items-center space-x-3 bg-slate-950/80 border border-slate-800 px-4 py-2.5 rounded-xl self-start md:self-auto text-xs">
             <span class="text-slate-400">Selected Role:</span>
@@ -216,27 +541,40 @@ export default function Home() {
                 <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                 </svg>
-                <span>Task Entry & Timer Configuration</span>
+                <span>Task Entry & Active Tasking Configuration</span>
               </h2>
+              <Show when={activeTasking.isTasking}>
+                <span class="px-2.5 py-1 text-xs font-bold bg-emerald-950 text-emerald-400 border border-emerald-800 rounded-lg flex items-center space-x-1.5 animate-pulse">
+                  <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+                  <span>Active Tasking Session</span>
+                </span>
+              </Show>
             </div>
 
-            <form onSubmit={handleTaskSubmit} class="space-y-5">
+            <form onSubmit={handleStartTaskLog} class="space-y-5">
               {/* Role & Subrole Row */}
               <div class={getUserAvailableRoles().length > 1 ? "grid grid-cols-1 sm:grid-cols-2 gap-5" : "grid grid-cols-1 gap-5"}>
                 <Show when={getUserAvailableRoles().length > 1}>
                   <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
                       <span>Role <span class="text-rose-400">*</span></span>
-                      <Show when={activeBilledInfo().activeTimer}>
-                        <span class="text-[9px] bg-sky-900/50 text-sky-400 px-1.5 py-0.5 rounded border border-sky-800/50">Locked to Timer</span>
+                      <Show when={activeTasking.isTasking && !unlockedFields().role}>
+                        <span class="text-[9px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800" title="Double-click dropdown to edit">🔒 Locked (Double-click)</span>
                       </Show>
                     </label>
-                    <div class="relative">
+                    <div
+                      onDblClick={() => setUnlockedFields((prev) => ({ ...prev, role: !prev.role }))}
+                      class="relative"
+                    >
                       <select
                         value={selectedRole()}
-                        disabled={activeBilledInfo().activeTimer}
-                        onChange={(e) => setSelectedRole(e.currentTarget.value as Role)}
-                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none disabled:opacity-50"
+                        disabled={activeBilledInfo().activeTimer || (activeTasking.isTasking && !unlockedFields().role)}
+                        onChange={(e) => {
+                          const r = e.currentTarget.value as Role;
+                          setSelectedRole(r);
+                          if (activeTasking.isTasking) updateActiveTasking({ role: r });
+                        }}
+                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none disabled:opacity-60 cursor-pointer"
                       >
                         <For each={getUserAvailableRoles()}>
                           {(role) => <option value={role}>{role}</option>}
@@ -252,14 +590,25 @@ export default function Home() {
                 </Show>
 
                 <div>
-                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Subrole <span class="text-rose-400">*</span>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
+                    <span>Subrole <span class="text-rose-400">*</span></span>
+                    <Show when={activeTasking.isTasking && !unlockedFields().subrole}>
+                      <span class="text-[9px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800" title="Double-click dropdown to edit">🔒 Locked (Double-click)</span>
+                    </Show>
                   </label>
-                  <div class="relative">
+                  <div
+                    onDblClick={() => setUnlockedFields((prev) => ({ ...prev, subrole: !prev.subrole }))}
+                    class="relative"
+                  >
                     <select
                       value={selectedSubrole()}
-                      onChange={(e) => setSelectedSubrole(e.currentTarget.value as Subrole)}
-                      class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none"
+                      disabled={activeTasking.isTasking && !unlockedFields().subrole}
+                      onChange={(e) => {
+                        const sr = e.currentTarget.value as Subrole;
+                        setSelectedSubrole(sr);
+                        if (activeTasking.isTasking) updateActiveTasking({ subrole: sr });
+                      }}
+                      class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none disabled:opacity-60 cursor-pointer"
                     >
                       <For each={SUBROLES_BY_ROLE[selectedRole()]}>
                         {(subrole) => <option value={subrole}>{subrole}</option>}
@@ -277,34 +626,52 @@ export default function Home() {
               {/* Task Title & URL Row */}
               <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
                 <div>
-                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Task Title <span class="text-rose-400">*</span>
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
+                    <span>Task Title <span class="text-rose-400">*</span></span>
+                    <Show when={activeTasking.isTasking && !unlockedFields().title}>
+                      <span class="text-[9px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800" title="Double-click input to edit">🔒 Locked (Double-click)</span>
+                    </Show>
                   </label>
                   <input
                     type="text"
                     required
+                    disabled={activeTasking.isTasking && !unlockedFields().title}
+                    onDblClick={() => setUnlockedFields((prev) => ({ ...prev, title: !prev.title }))}
                     placeholder="e.g. gnLokxh8Gsk or 4081768869215654175"
                     value={taskTitle()}
-                    onInput={(e) => setTaskTitle(e.currentTarget.value)}
-                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    onInput={(e) => {
+                      const val = e.currentTarget.value;
+                      setTaskTitle(val);
+                      if (activeTasking.isTasking) updateActiveTasking({ title: val });
+                    }}
+                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60"
                   />
                 </div>
 
                 <div>
-                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
-                    Task URL
+                  <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
+                    <span>Task URL</span>
+                    <Show when={activeTasking.isTasking && !unlockedFields().url}>
+                      <span class="text-[9px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800" title="Double-click input to edit">🔒 Locked (Double-click)</span>
+                    </Show>
                   </label>
                   <input
                     type="url"
+                    disabled={activeTasking.isTasking && !unlockedFields().url}
+                    onDblClick={() => setUnlockedFields((prev) => ({ ...prev, url: !prev.url }))}
                     placeholder="https://feather.openai.com/tasks/..."
                     value={taskUrl()}
-                    onInput={(e) => setTaskUrl(e.currentTarget.value)}
-                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    onInput={(e) => {
+                      const val = e.currentTarget.value;
+                      setTaskUrl(val);
+                      if (activeTasking.isTasking) updateActiveTasking({ url: val });
+                    }}
+                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60"
                   />
                 </div>
               </div>
 
-              {/* Notes */}
+              {/* Notes (Always Editable) */}
               <div>
                 <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2">
                   Task Notes
@@ -313,22 +680,56 @@ export default function Home() {
                   rows={2}
                   placeholder="Add optional task details or findings..."
                   value={taskNotes()}
-                  onInput={(e) => setTaskNotes(e.currentTarget.value)}
+                  onInput={(e) => {
+                    const val = e.currentTarget.value;
+                    setTaskNotes(val);
+                    if (activeTasking.isTasking) updateActiveTasking({ notes: val });
+                  }}
                   class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500"
                 ></textarea>
               </div>
 
               {/* Action Bar */}
               <div class="pt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-slate-800">
-                <button
-                  type="submit"
-                  class="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-sky-950 transition-all flex items-center justify-center space-x-2"
+                <Show
+                  when={activeTasking.isTasking}
+                  fallback={
+                    <button
+                      type="submit"
+                      class="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-sky-950 transition-all flex items-center justify-center space-x-2"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>Start Task Log</span>
+                    </button>
+                  }
                 >
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                  </svg>
-                  <span>Submit Task to Log</span>
-                </button>
+                  <div class="flex items-center space-x-3 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={handleEndTaskLog}
+                      class="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-950 transition-all flex items-center justify-center space-x-2"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                      </svg>
+                      <span>End Task Log</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsCancelModalOpen(true)}
+                      class="px-4 py-3 bg-slate-950 border border-rose-900/60 hover:bg-rose-950/40 text-rose-400 font-semibold rounded-xl text-sm transition-all flex items-center space-x-1.5"
+                    >
+                      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                      <span>Cancel</span>
+                    </button>
+                  </div>
+                </Show>
               </div>
             </form>
           </div>
@@ -337,13 +738,13 @@ export default function Home() {
         {/* Right Column: Timer Display & Current Role Global AHT Widget */}
         <div class="lg:col-span-4 space-y-6">
 
-          {/* Active Task Timer Card */}
+          {/* Active Task Timer Card (6 Visual States) */}
           <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl">
             <div class="flex items-center justify-between mb-3">
               <span class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center space-x-2">
                 <span
-                  class={`w-2.5 h-2.5 rounded-full animate-pulse ${
-                    timerMode() === "untracked" ? "bg-amber-400" : "bg-emerald-400"
+                  class={`w-2.5 h-2.5 rounded-full ${timerState().dotColor} ${
+                    timerState().dotAnimate || ""
                   }`}
                 ></span>
                 <span>Active Task Timer</span>
@@ -355,25 +756,17 @@ export default function Home() {
 
             <div class="text-center py-4 bg-slate-950 rounded-xl border border-slate-800 my-2">
               <div
-                class={`text-4xl font-mono font-extrabold tracking-wider ${
-                  timerMode() === "untracked" ? "text-amber-400" : "text-emerald-400"
-                }`}
+                class={`text-4xl font-mono font-extrabold tracking-wider ${timerState().digitsColor}`}
               >
-                {timerMode() === "untracked" ? "00:00" : formatTaskDuration(liveElapsedSeconds())}
+                {timerState().timerDisplay}
               </div>
               <div class="text-xs mt-2 space-y-0.5">
-                <Show
-                  when={timerMode() === "hubstaff"}
-                  fallback={
-                    <>
-                      <span class="block font-bold text-amber-300">Untracked Task (No Hubstaff Timer)</span>
-                      <span class="block text-slate-400">Submissions increment task count; Hubstaff time +0</span>
-                    </>
-                  }
-                >
-                  <span class="block font-bold text-emerald-400">Tracked Task (Hubstaff Timer Running)</span>
-                  <span class="block text-slate-400">Submissions increment task count; billing Hubstaff time as normal</span>
-                </Show>
+                <span class={`block font-bold ${timerState().headerColor}`}>
+                  {timerState().headerText}
+                </span>
+                <span class="block text-slate-400">
+                  {timerState().subtextText}
+                </span>
               </div>
             </div>
           </div>
@@ -449,23 +842,17 @@ export default function Home() {
             </p>
           </div>
 
-          {/* Controls */}
           <div class="flex flex-wrap items-center gap-3">
-            <div class="relative min-w-[180px]">
-              <input
-                type="text"
-                placeholder="Search recent..."
-                value={searchQuery()}
-                onInput={(e) => setSearchQuery(e.currentTarget.value)}
-                class="w-full bg-slate-950 border border-slate-800 rounded-lg pl-8 pr-3 py-1 text-xs text-slate-200 placeholder-slate-500 focus:outline-none"
-              />
-              <svg class="w-3.5 h-3.5 text-slate-500 absolute left-2.5 top-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-              </svg>
-            </div>
+            <input
+              type="text"
+              placeholder="Search title, subrole, notes..."
+              value={searchQuery()}
+              onInput={(e) => setSearchQuery(e.currentTarget.value)}
+              class="bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-lg px-3 py-1.5 placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-sky-500 min-w-[200px]"
+            />
 
             <Show when={getUserAvailableRoles().length > 1 || (tasks.some((t) => t.role === "Trainer") && tasks.some((t) => t.role === "Reviewer"))}>
-              <div class="flex items-center space-x-1 bg-slate-950 p-1 rounded-lg border border-slate-800 text-xs">
+              <div class="flex items-center space-x-1 bg-slate-950 border border-slate-800 p-1 rounded-lg text-xs">
                 <button
                   onClick={() => setLogFilterRole("All")}
                   class={`px-2.5 py-0.5 rounded transition-all ${logFilterRole() === "All" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
@@ -475,7 +862,7 @@ export default function Home() {
                 </button>
                 <button
                   onClick={() => setLogFilterRole("Trainer")}
-                  class={`px-2.5 py-0.5 rounded transition-all ${logFilterRole() === "Trainer" ? "bg-sky-600 text-white font-medium" : "text-slate-400"
+                  class={`px-2.5 py-0.5 rounded transition-all ${logFilterRole() === "Trainer" ? "bg-sky-600 text-white font-medium shadow-md shadow-sky-950" : "text-slate-400 hover:text-slate-200"
                     }`}
                 >
                   Trainer
@@ -492,139 +879,157 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Table */}
+        {/* Task Log Table */}
         <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr class="text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800 bg-slate-950/40">
-                <th class="py-3 px-4">Date / Time</th>
+          <table class="w-full text-left text-xs text-slate-300">
+            <thead class="bg-slate-950/80 text-slate-400 uppercase tracking-wider font-semibold border-b border-slate-800">
+              <tr>
+                <th class="py-3 px-4">Logged At</th>
                 <th class="py-3 px-4">Role & Subrole</th>
-                <th class="py-3 px-4">Task Details</th>
-                <th class="py-3 px-4">Timer Mode</th>
+                <th class="py-3 px-4">Task Information</th>
+                <th class="py-3 px-4">Tracking Mode</th>
                 <th class="py-3 px-4">Duration</th>
                 <th class="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
-            <tbody class="divide-y divide-slate-800/60">
+            <tbody class="divide-y divide-slate-800/60 font-medium">
               <Show
                 when={previewTasks().length > 0}
                 fallback={
                   <tr>
                     <td colSpan={6} class="py-8 text-center text-slate-500">
-                      No tasks found in recent log preview.
+                      No task log entries found. Start a task log above to record tasks.
                     </td>
                   </tr>
                 }
               >
                 <For each={previewTasks()}>
-                  {(task) => (
-                    <tr class="hover:bg-slate-800/40 transition-colors">
-                      <td class="py-3 px-4 text-slate-400 whitespace-nowrap font-mono">
-                        {new Date(task.createdAt).toLocaleString([], {
-                          month: "short",
-                          day: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </td>
+                  {(task) => {
+                    const sameGroupTasks = () => tasks.filter((t) => t.subrole === task.subrole && t.title === task.title && t.title !== "Administrative Time");
+                    const isGroup = () => sameGroupTasks().length > 1;
 
-                      <td class="py-3 px-4 whitespace-nowrap">
-                        <div class="flex flex-col space-y-1">
-                          <span class={`w-max text-[10px] font-bold px-2 py-0.5 rounded border ${task.role === 'Trainer'
-                            ? 'bg-sky-950/80 text-sky-300 border-sky-800'
-                            : 'bg-purple-950/80 text-purple-300 border-purple-800'
-                            }`}>
-                            {task.role}
-                          </span>
-                          <span class="text-slate-300 font-medium">{task.subrole}</span>
-                        </div>
-                      </td>
+                    return (
+                      <tr class="hover:bg-slate-800/40 transition-colors">
+                        <td class="py-3 px-4 whitespace-nowrap text-slate-400 font-mono">
+                          {new Date(task.createdAt).toLocaleString([], {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </td>
 
-                      <td class="py-3 px-4 max-w-xs sm:max-w-md">
-                        <div class="font-semibold text-slate-100 text-sm">
-                          {task.title}
-                        </div>
-                        <Show when={task.url && task.url !== "#"}>
-                          <a
-                            href={task.url}
-                            target="_blank"
-                            rel="noreferrer"
-                            class="text-[11px] text-sky-400 hover:underline inline-flex items-center space-x-1 mt-0.5"
-                          >
-                            <span>{task.url}</span>
-                          </a>
-                        </Show>
-                      </td>
+                        <td class="py-3 px-4 whitespace-nowrap">
+                          <div class="flex flex-col space-y-1">
+                            <span class={`w-max text-[10px] font-bold px-2 py-0.5 rounded border ${task.role === 'Trainer'
+                              ? 'bg-sky-950/80 text-sky-300 border-sky-800'
+                              : 'bg-purple-950/80 text-purple-300 border-purple-800'
+                              }`}>
+                              {task.role}
+                            </span>
+                            <span class="text-slate-300 font-medium">{task.subrole}</span>
+                          </div>
+                        </td>
 
-                      <td class="py-3 px-4 whitespace-nowrap">
-                        <div class="flex flex-col space-y-1">
-                          <Show
-                            when={task.timerMode === "hubstaff"}
-                            fallback={
-                              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">
-                                Untracked Task
+                        <td class="py-3 px-4 max-w-xs sm:max-w-md">
+                          <div class="flex items-center space-x-2">
+                            <Show
+                              when={task.url && task.url !== "#"}
+                              fallback={<span class="font-semibold text-slate-100 text-sm">{task.title}</span>}
+                            >
+                              <a
+                                href={task.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                class="font-semibold text-sky-400 hover:text-sky-300 hover:underline text-sm inline-flex items-center space-x-1"
+                              >
+                                <span>{task.title}</span>
+                                <svg class="w-3.5 h-3.5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                                </svg>
+                              </a>
+                            </Show>
+                            <Show when={isGroup()}>
+                              <button
+                                type="button"
+                                onClick={() => openGroupModal(task.subrole, task.title)}
+                                class="px-2 py-0.5 text-[10px] font-bold bg-sky-950/90 text-sky-300 border border-sky-700/80 hover:bg-sky-900 rounded-md transition-colors flex items-center space-x-1 cursor-pointer"
+                                title="Click to view task group breakdown and total time logged"
+                              >
+                                <span>🧩 Part of Group ({sameGroupTasks().length} logs)</span>
+                              </button>
+                            </Show>
+                          </div>
+                          <Show when={task.notes}>
+                            <p class="text-[11px] text-slate-400 mt-1 italic">
+                              "{task.notes}"
+                            </p>
+                          </Show>
+                        </td>
+
+                        <td class="py-3 px-4 whitespace-nowrap">
+                          <div class="flex flex-col space-y-1">
+                            <Show
+                              when={task.timerMode === "hubstaff"}
+                              fallback={
+                                <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-950 border border-amber-800 text-amber-300">
+                                  Untracked Task
+                                </span>
+                              }
+                            >
+                              <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
+                                Hubstaff Active
                               </span>
-                            }
+                            </Show>
+                            <Show when={task.isManualEntry}>
+                              <span class="w-max text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-sky-800 text-sky-300">
+                                🖊️ Manual Entry
+                              </span>
+                            </Show>
+                          </div>
+                        </td>
+
+                        <td class="py-3 px-4 whitespace-nowrap font-mono">
+                          <div class="text-sm font-bold text-white">
+                            {task.timerMode === "untracked" ? "00:00 (0m)" : formatTaskDuration(task.durationSeconds)}
+                          </div>
+                        </td>
+
+                        <td class="py-3 px-4 text-right whitespace-nowrap space-x-1">
+                          <button
+                            onClick={() => openEditModal(task)}
+                            title="Edit task log details"
+                            class="text-sky-400 hover:text-sky-300 p-1 rounded hover:bg-sky-950/40 transition-colors"
                           >
-                            <span class="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-950 border border-emerald-800 text-emerald-300">
-                              Hubstaff Active
-                            </span>
-                          </Show>
-                          <Show when={task.isManualEntry}>
-                            <span class="w-max text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-950 border border-sky-800 text-sky-300">
-                              🖊️ Manual Entry
-                            </span>
-                          </Show>
-                        </div>
-                      </td>
-
-                      <td class="py-3 px-4 whitespace-nowrap font-mono">
-                        <div class="text-sm font-bold text-white">
-                          {task.timerMode === "untracked" ? "00:00 (0m)" : formatTaskDuration(task.durationSeconds)}
-                        </div>
-                      </td>
-
-                      <td class="py-3 px-4 text-right whitespace-nowrap space-x-1">
-                        <button
-                          onClick={() => openEditModal(task)}
-                          title="Edit task log details"
-                          class="text-sky-400 hover:text-sky-300 p-1 rounded hover:bg-sky-950/40 transition-colors"
-                        >
-                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                          </svg>
-                        </button>
-                        <button
-                          onClick={() => deleteTaskLog(task.id)}
-                          title="Delete task entry"
-                          class="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-950/40 transition-colors"
-                        >
-                          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      </td>
-                    </tr>
-                  )}
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={() => deleteTaskLog(task.id)}
+                            title="Delete task entry"
+                            class="text-slate-500 hover:text-rose-400 p-1 rounded hover:bg-rose-950/40 transition-colors"
+                          >
+                            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  }}
                 </For>
               </Show>
             </tbody>
           </table>
         </div>
 
-        {/* Footer Button to navigate to full task log page */}
-        <div class="pt-3 border-t border-slate-800 flex items-center justify-between">
-          <span class="text-xs text-slate-400">
-            Total Logged Tasks: <span class="font-bold text-slate-200">{tasks.length} tasks</span>
-          </span>
+        <div class="pt-2 text-right">
           <a
             href="/task-log"
-            class="px-4 py-2 bg-sky-600 hover:bg-sky-500 text-white font-semibold text-xs rounded-xl transition-all shadow-md shadow-sky-950 flex items-center space-x-1.5"
+            class="text-xs text-sky-400 hover:text-sky-300 font-semibold inline-flex items-center space-x-1 hover:underline"
           >
-            <span>View Full Task Log</span>
-            <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-            </svg>
+            <span>View All Task Logs & Historical Entries &rarr;</span>
           </a>
         </div>
       </div>

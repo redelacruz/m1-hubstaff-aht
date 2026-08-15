@@ -1,7 +1,7 @@
 import logging
 from typing import Optional
 from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete
@@ -205,7 +205,10 @@ async def sync_organizations_endpoint(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/sync-tracking-states")
-async def sync_tracking_states_endpoint(db: AsyncSession = Depends(get_db)):
+async def sync_tracking_states_endpoint(
+    days: Optional[int] = Query(default=None, ge=1, description="Number of past days to reconcile"),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(User).limit(1))
     user = result.scalar_one_or_none()
     if not user:
@@ -216,7 +219,7 @@ async def sync_tracking_states_endpoint(db: AsyncSession = Depends(get_db)):
     if not credential or not credential.access_token:
         raise HTTPException(status_code=400, detail="Hubstaff account is not connected.")
 
-    sync_result = await sync_user_tracking_states(user.id, credential.access_token, db)
+    sync_result = await sync_user_tracking_states(user.id, credential.access_token, db, max_days=days)
     try:
         await subscribe_user_webhooks(user.id, credential.access_token, db)
     except Exception:

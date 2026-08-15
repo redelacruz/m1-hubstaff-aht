@@ -701,13 +701,16 @@ export const resetAllToDefault = () => {
   saveStateToLocalStorage();
 };
 
-export const syncHubstaffTrackingStatesFromBackend = async (): Promise<{
+export const syncHubstaffTrackingStatesFromBackend = async (days?: number): Promise<{
   success: boolean;
   events_count: number;
   tracking_start_date?: string;
 }> => {
   try {
-    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/sync-tracking-states`, {
+    const url = days
+      ? `${getApiBaseUrl()}/api/hubstaff/sync-tracking-states?days=${encodeURIComponent(days)}`
+      : `${getApiBaseUrl()}/api/hubstaff/sync-tracking-states`;
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
     });

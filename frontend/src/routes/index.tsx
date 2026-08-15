@@ -24,6 +24,9 @@ import {
   activeTasking,
   updateActiveTasking,
   clearActiveTasking,
+  lastCompletedTaskEndTimeMs,
+  setLastCompletedTaskEndTime,
+  getUnassignedTimerAnchorMs,
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
 import { ConfirmationModal } from "../components/ConfirmationModal";
@@ -107,7 +110,6 @@ export default function Home() {
 
   // Monitor Hubstaff Timer transitions during Active Tasking mode
   let previousTimerState = false;
-  let lastEndTaskLogMs = 0;
 
   createEffect(() => {
     const isTimerRunning = activeBilledInfo().activeTimer;
@@ -193,7 +195,9 @@ export default function Home() {
 
     // State 2: Actively Tasking (Hubstaff Timer Running)
     if (isTasking && isTimerRunning) {
-      const currentSegmentSecs = timerStartMs ? Math.max(0, Math.round((Date.now() - timerStartMs) / 1000)) : 0;
+      const currentSegmentSecs = activeTasking.timerStartMs
+        ? Math.max(0, Math.round((Date.now() - activeTasking.timerStartMs) / 1000))
+        : (timerStartMs ? Math.max(0, Math.round((Date.now() - timerStartMs) / 1000)) : 0);
       const totalGroupSecs = priorGroupSeconds + currentSegmentSecs;
       return {
         digitsColor: "text-emerald-400",
@@ -208,11 +212,11 @@ export default function Home() {
 
     // State 3 & 4: Hubstaff Timer Running but NOT in Active Tasking Mode
     if (!isTasking && isTimerRunning) {
-      const startOrEndMs = timerStartMs || lastEndTaskLogMs || Date.now();
-      const elapsedSecs = Math.max(0, Math.round((Date.now() - startOrEndMs) / 1000));
-      const elapsedMins = elapsedSecs / 60;
+      const anchorMs = getUnassignedTimerAnchorMs(timerStartMs, lastCompletedTaskEndTimeMs());
+      const elapsedSecs = Math.max(0, Math.round((Date.now() - anchorMs) / 1000));
+      const adminThresholdSecs = (settings.adminInactivityThresholdMinutes ?? 10) * 60;
 
-      if (elapsedMins < 10) {
+      if (elapsedSecs < adminThresholdSecs) {
         // State 3: Pre-Administrative Warning
         return {
           digitsColor: "text-amber-500",
@@ -272,40 +276,34 @@ export default function Home() {
 
     const nowMs = Date.now();
     const info = activeBilledInfo();
-
     const adminThresholdSecs = (settings.adminInactivityThresholdMinutes ?? 10) * 60;
 
-    // Check pre-session timer state (> threshold excess admin logging)
+    let initialTimerStartMs: number | undefined = undefined;
+
     if (info.activeTimer && info.activeStartMs) {
-      const diffSecs = Math.round((nowMs - info.activeStartMs) / 1000);
-      if (diffSecs >= adminThresholdSecs) {
+      const anchorMs = getUnassignedTimerAnchorMs(info.activeStartMs, lastCompletedTaskEndTimeMs());
+      const elapsedSecs = Math.max(0, Math.round((nowMs - anchorMs) / 1000));
+
+      if (elapsedSecs > adminThresholdSecs) {
+        // Entire unassigned pre-task duration is logged as Administrative Time
         addTaskLog({
           role: selectedRole(),
           subrole: "Administrative",
           title: "Administrative Time",
           url: "",
           notes: "Pre-tasking excess Hubstaff timer duration logged as administrative time.",
-          durationSeconds: diffSecs - adminThresholdSecs,
+          durationSeconds: elapsedSecs,
           timerMode: "hubstaff",
         });
+        initialTimerStartMs = nowMs;
+      } else {
+        // Gap or initial timer start is included in task duration
+        initialTimerStartMs = anchorMs;
       }
     }
 
-    // Check post-task gap (> threshold gap since last End Task Log)
-    if (lastEndTaskLogMs > 0 && info.activeTimer) {
-      const gapSecs = Math.round((nowMs - lastEndTaskLogMs) / 1000);
-      if (gapSecs >= adminThresholdSecs) {
-        addTaskLog({
-          role: selectedRole(),
-          subrole: "Administrative",
-          title: "Administrative Time",
-          url: "",
-          notes: "Gap between task logging sessions while Hubstaff timer was running.",
-          durationSeconds: gapSecs,
-          timerMode: "hubstaff",
-        });
-      }
-    }
+    // Reset lastCompletedTaskEndTimeMs so the current task uses its own session
+    setLastCompletedTaskEndTime(null);
 
     updateActiveTasking({
       isTasking: true,
@@ -315,7 +313,7 @@ export default function Home() {
       url: taskUrl().trim(),
       notes: taskNotes().trim(),
       startTimeMs: nowMs,
-      timerStartMs: info.activeTimer ? (info.activeStartMs || nowMs) : undefined,
+      timerStartMs: initialTimerStartMs,
       lastTimerStopMs: undefined,
       sessionSegmentIds: [],
     });
@@ -333,13 +331,13 @@ export default function Home() {
 
     const info = activeBilledInfo();
     const nowMs = Date.now();
+    const adminThresholdMs = (settings.adminInactivityThresholdMinutes ?? 10) * 60 * 1000;
 
     // If timer is currently running, log final segment
     if (info.activeTimer && activeTasking.timerStartMs) {
       const segSecs = Math.max(1, Math.round((nowMs - activeTasking.timerStartMs) / 1000));
       
       let finalNotes = taskNotes().trim();
-      const adminThresholdMs = (settings.adminInactivityThresholdMinutes ?? 10) * 60 * 1000;
       if (activeTasking.startTimeMs && (activeTasking.timerStartMs - activeTasking.startTimeMs) > adminThresholdMs) {
         const delaySecs = Math.round((activeTasking.timerStartMs - activeTasking.startTimeMs) / 1000);
         finalNotes += `\n[Note: ${formatDuration(delaySecs)} were spent working on the task before the Hubstaff timer was started.]`;
@@ -354,7 +352,7 @@ export default function Home() {
         durationSeconds: segSecs,
         timerMode: "hubstaff",
       });
-    } else if (activeTasking.lastTimerStopMs && (nowMs - activeTasking.lastTimerStopMs) > ((settings.adminInactivityThresholdMinutes ?? 10) * 60 * 1000)) {
+    } else if (activeTasking.lastTimerStopMs && (nowMs - activeTasking.lastTimerStopMs) > adminThresholdMs) {
       // Timer stopped > threshold ago before clicking End Task Log -> Append note
       const stopDelaySecs = Math.round((nowMs - activeTasking.lastTimerStopMs) / 1000);
       const appendNote = `\n[Note: ${formatDuration(stopDelaySecs)} were spent working on the task after the Hubstaff timer was stopped.]`;
@@ -381,7 +379,7 @@ export default function Home() {
       });
     }
 
-    lastEndTaskLogMs = nowMs;
+    setLastCompletedTaskEndTime(nowMs);
     const endedTitle = activeTasking.title;
     clearActiveTasking();
 
@@ -407,6 +405,9 @@ export default function Home() {
         notes: "Tasking cancelled by user. Duration retained as Administrative Time.",
       });
     }
+
+    // Set lastCompletedTaskEndTime to null so unassigned running timer naturally measures from activeStartMs
+    setLastCompletedTaskEndTime(null);
 
     clearActiveTasking();
     setTaskTitle("");

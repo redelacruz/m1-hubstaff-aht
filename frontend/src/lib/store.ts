@@ -248,6 +248,50 @@ export const [hubstaffStatus, setHubstaffStatus] = createSignal<HubstaffAuthStat
   user: DEFAULT_USER,
 });
 
+const LAST_END_TASK_STORAGE_KEY = "hubstaff_last_completed_task_end_ms_v1";
+
+const loadInitialLastCompletedTaskEnd = (): number | null => {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const saved = localStorage.getItem(LAST_END_TASK_STORAGE_KEY);
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        return isNaN(parsed) ? null : parsed;
+      }
+    } catch (e) {
+      console.warn("Error loading last completed task end timestamp:", e);
+    }
+  }
+  return null;
+};
+
+export const [lastCompletedTaskEndTimeMs, setLastCompletedTaskEndTimeState] = createSignal<number | null>(
+  loadInitialLastCompletedTaskEnd()
+);
+
+export const setLastCompletedTaskEndTime = (timeMs: number | null) => {
+  setLastCompletedTaskEndTimeState(timeMs);
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      if (timeMs === null) {
+        localStorage.removeItem(LAST_END_TASK_STORAGE_KEY);
+      } else {
+        localStorage.setItem(LAST_END_TASK_STORAGE_KEY, timeMs.toString());
+      }
+    } catch (e) {
+      console.warn("Error saving last completed task end timestamp:", e);
+    }
+  }
+};
+
+export const getUnassignedTimerAnchorMs = (activeStartMs?: number, lastEndMs?: number | null): number => {
+  if (!activeStartMs) return Date.now();
+  if (lastEndMs && activeStartMs && lastEndMs >= activeStartMs) {
+    return lastEndMs;
+  }
+  return activeStartMs;
+};
+
 
 export const saveStateToLocalStorage = () => {
   if (typeof window === "undefined") return;

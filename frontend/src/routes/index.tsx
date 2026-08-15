@@ -305,6 +305,8 @@ export default function Home() {
     // Reset lastCompletedTaskEndTimeMs so the current task uses its own session
     setLastCompletedTaskEndTime(null);
 
+    const sessionGroupId = `tg_${nowMs}_${Math.random().toString(36).substring(2, 7)}`;
+
     updateActiveTasking({
       isTasking: true,
       role: selectedRole(),
@@ -312,6 +314,7 @@ export default function Home() {
       title: taskTitle().trim(),
       url: taskUrl().trim(),
       notes: taskNotes().trim(),
+      taskGroupId: sessionGroupId,
       startTimeMs: nowMs,
       timerStartMs: initialTimerStartMs,
       lastTimerStopMs: undefined,

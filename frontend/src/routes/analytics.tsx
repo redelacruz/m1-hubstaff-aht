@@ -254,8 +254,11 @@ export default function Analytics() {
               <For each={subrolesToDisplay}>
                 {(subrole) => {
                   const parentRole: Role = SUBROLES_BY_ROLE.Reviewer.includes(subrole) ? "Reviewer" : "Trainer";
-                  const subroleTasks = tasks.filter((t) => t.subrole === subrole);
-                  const count = subroleTasks.length;
+                  const subroleTasks = tasks.filter((t) => t.subrole === subrole && t.title !== "Administrative Time");
+                  const uniqueGroups = new Set(
+                    subroleTasks.map((t) => t.taskGroupId || `${t.subrole}:::${t.title}`)
+                  );
+                  const count = uniqueGroups.size;
                   const totalDirectSecs = subroleTasks.reduce((sum, t) => sum + (t.durationSeconds || 0), 0);
                   const avgDirectSecs = count > 0 ? Math.round(totalDirectSecs / count) : 0;
 

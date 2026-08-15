@@ -53,6 +53,7 @@ export interface ActiveTaskingSession {
   title: string;
   url: string;
   notes: string;
+  taskGroupId?: string;
   startTimeMs?: number;
   timerStartMs?: number;
   lastTimerStopMs?: number;
@@ -205,6 +206,7 @@ const loadInitialActiveTasking = (): ActiveTaskingSession => {
     title: "",
     url: "",
     notes: "",
+    taskGroupId: undefined,
     sessionSegmentIds: [],
   };
 };
@@ -230,6 +232,7 @@ export const clearActiveTasking = () => {
     title: "",
     url: "",
     notes: "",
+    taskGroupId: undefined,
     startTimeMs: undefined,
     timerStartMs: undefined,
     lastTimerStopMs: undefined,
@@ -415,9 +418,11 @@ export const addTaskLog = (
   addToHubstaffTime: boolean = true
 ): TaskLogEntry => {
   const currentUserId = hubstaffStatus().user?.id || DEFAULT_USER.id;
+  const assignedGroupId = entry.taskGroupId || (activeTasking.isTasking ? activeTasking.taskGroupId : undefined);
   const newTask: TaskLogEntry = {
     ...entry,
     id: entry.id || generateTaskId(),
+    taskGroupId: assignedGroupId,
     userId: currentUserId,
     createdAt: new Date().toISOString(),
   };
@@ -449,7 +454,7 @@ export const fetchTaskLogsFromBackend = async () => {
 
 export const saveTaskToBackend = async (task: TaskLogEntry) => {
   try {
-    await fetch(`${getApiBaseUrl()}/api/hubstaff/tasks`, {
+    const res = await fetch(`${getApiBaseUrl()}/api/hubstaff/tasks`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -462,9 +467,17 @@ export const saveTaskToBackend = async (task: TaskLogEntry) => {
         duration_seconds: task.durationSeconds,
         timer_mode: task.timerMode,
         is_manual_entry: task.isManualEntry ?? false,
+        task_group_id: task.taskGroupId,
         created_at: task.createdAt,
       }),
     });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.task?.taskGroupId) {
+        setTasks((t) => t.id === task.id, "taskGroupId", data.task.taskGroupId);
+        saveStateToLocalStorage();
+      }
+    }
   } catch (e) {
     console.warn("Could not save task to backend DB:", e);
   }

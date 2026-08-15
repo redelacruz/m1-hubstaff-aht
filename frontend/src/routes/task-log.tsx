@@ -8,6 +8,7 @@ import {
   deleteTaskLog,
   formatTaskDuration,
   getUserAvailableRoles,
+  calculateGlobalAHT,
 } from "../lib/store";
 import { EditTaskModal } from "../components/EditTaskModal";
 import { TaskGroupModal } from "../components/TaskGroupModal";
@@ -135,9 +136,15 @@ export default function TaskLogPage() {
             </p>
           </div>
 
-          <div class="text-right">
-            <span class="text-xs text-slate-400 block">Total Logged Entries:</span>
-            <span class="text-xl font-extrabold text-white font-mono">{tasks.length} Logs</span>
+          <div class="flex items-center gap-3">
+            <div class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-right shadow-inner">
+              <span class="text-[10px] uppercase font-bold text-slate-400 block">Submitted Tasks</span>
+              <span class="text-xl font-extrabold text-sky-400 font-mono">{calculateGlobalAHT(roleFilter()).taskCount} Tasks</span>
+            </div>
+            <div class="bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-right shadow-inner">
+              <span class="text-[10px] uppercase font-bold text-slate-400 block">Log Segments</span>
+              <span class="text-xl font-extrabold text-slate-300 font-mono">{filteredTasks().length} Logs</span>
+            </div>
           </div>
         </div>
       </div>

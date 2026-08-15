@@ -399,13 +399,16 @@ async def fetch_organization_tracking_states(
             return []
 
 
-async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSession) -> Dict[str, Any]:
+async def sync_user_tracking_states(
+    user_id: str, access_token: str, db: AsyncSession, max_days: Optional[int] = None
+) -> Dict[str, Any]:
     """
     Queries tracking_states endpoint backward in <= 7-day chunks starting from now
-    down to user's set tracking_start_date (up to 6-month API retention limit).
+    down to user's set tracking_start_date (up to 6-month API retention limit),
+    or within the last max_days if specified.
     Performs state reconciliation:
-    1. Upserts new and modified events into PostgreSQL all the way back to tracking_start_date.
-    2. Prunes local database events within the 3-month window that no longer exist on Hubstaff.
+    1. Upserts new and modified events into PostgreSQL all the way back to cutoff date.
+    2. Prunes local database events within the prune window that no longer exist on Hubstaff.
     3. Adjusts user's tracking_start_date if a gap is detected.
     """
     # 1. Fetch user settings
@@ -419,10 +422,14 @@ async def sync_user_tracking_states(user_id: str, access_token: str, db: AsyncSe
     six_months_ago = now_utc - timedelta(days=180)
     three_months_ago = now_utc - timedelta(days=90)
 
-    # API Fetching Cutoff: query backward to tracking_start_date (up to 6 months API retention limit)
-    fetch_cutoff_datetime = max(start_datetime_utc, six_months_ago)
-    # Deletion Pruning Cutoff: only prune/delete local events within the last 3 months
-    prune_cutoff_datetime = max(start_datetime_utc, three_months_ago)
+    if max_days:
+        fetch_cutoff_datetime = max(start_datetime_utc, now_utc - timedelta(days=max_days))
+        prune_cutoff_datetime = fetch_cutoff_datetime
+    else:
+        # API Fetching Cutoff: query backward to tracking_start_date (up to 6 months API retention limit)
+        fetch_cutoff_datetime = max(start_datetime_utc, six_months_ago)
+        # Deletion Pruning Cutoff: only prune/delete local events within the last 3 months
+        prune_cutoff_datetime = max(start_datetime_utc, three_months_ago)
 
     # 2. Fetch user's organizations
     orgs_res = await db.execute(select(Organization).where(Organization.user_id == user_id))

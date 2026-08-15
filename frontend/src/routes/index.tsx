@@ -101,6 +101,17 @@ export default function Home() {
     }
   });
 
+  // Keep default role synced with settings when not actively tasking and timer not running
+  createEffect(() => {
+    const defRole = settings.defaultRole;
+    const info = activeBilledInfo();
+    if (!activeTasking.isTasking && (!info.activeTimer || !info.activeProjectName)) {
+      if (defRole && selectedRole() !== defRole) {
+        setSelectedRole(defRole);
+      }
+    }
+  });
+
   // Filters & Notifications
   const [logFilterRole, setLogFilterRole] = createSignal<Role | "All">("All");
   const [searchQuery, setSearchQuery] = createSignal<string>("");
@@ -296,7 +307,7 @@ export default function Home() {
       return;
     }
 
-    const nowMs = Date.now();
+    const nowTimestamp = Date.now();
     const info = activeBilledInfo();
     const adminThresholdSecs = (settings.adminInactivityThresholdMinutes ?? 10) * 60;
 
@@ -304,7 +315,7 @@ export default function Home() {
 
     if (info.activeTimer && info.activeStartMs) {
       const anchorMs = getUnassignedTimerAnchorMs(info.activeStartMs, lastCompletedTaskEndTimeMs());
-      const elapsedSecs = Math.max(0, Math.round((nowMs - anchorMs) / 1000));
+      const elapsedSecs = Math.max(0, Math.round((nowTimestamp - anchorMs) / 1000));
 
       if (elapsedSecs > adminThresholdSecs) {
         // Entire unassigned pre-task duration is logged as Administrative Time
@@ -317,7 +328,7 @@ export default function Home() {
           durationSeconds: elapsedSecs,
           timerMode: "hubstaff",
         });
-        initialTimerStartMs = nowMs;
+        initialTimerStartMs = nowTimestamp;
       } else {
         // Gap or initial timer start is included in task duration
         initialTimerStartMs = anchorMs;
@@ -327,7 +338,7 @@ export default function Home() {
     // Reset lastCompletedTaskEndTimeMs so the current task uses its own session
     setLastCompletedTaskEndTime(null);
 
-    const sessionGroupId = `tg_${nowMs}_${Math.random().toString(36).substring(2, 7)}`;
+    const sessionGroupId = `tg_${nowTimestamp}_${Math.random().toString(36).substring(2, 7)}`;
 
     updateActiveTasking({
       isTasking: true,
@@ -337,7 +348,7 @@ export default function Home() {
       url: taskUrl().trim(),
       notes: taskNotes().trim(),
       taskGroupId: sessionGroupId,
-      startTimeMs: nowMs,
+      startTimeMs: nowTimestamp,
       timerStartMs: initialTimerStartMs,
       lastTimerStopMs: undefined,
       sessionSegmentIds: [],
@@ -355,12 +366,12 @@ export default function Home() {
     if (!activeTasking.isTasking) return;
 
     const info = activeBilledInfo();
-    const nowMs = Date.now();
+    const nowTimestamp = Date.now();
     const adminThresholdMs = (settings.adminInactivityThresholdMinutes ?? 10) * 60 * 1000;
 
     // If timer is currently running, log final segment
     if (info.activeTimer && activeTasking.timerStartMs) {
-      const segSecs = Math.max(1, Math.round((nowMs - activeTasking.timerStartMs) / 1000));
+      const segSecs = Math.max(1, Math.round((nowTimestamp - activeTasking.timerStartMs) / 1000));
       
       let finalNotes = taskNotes().trim();
       if (activeTasking.startTimeMs && (activeTasking.timerStartMs - activeTasking.startTimeMs) > adminThresholdMs) {
@@ -377,9 +388,9 @@ export default function Home() {
         durationSeconds: segSecs,
         timerMode: "hubstaff",
       });
-    } else if (activeTasking.lastTimerStopMs && (nowMs - activeTasking.lastTimerStopMs) > adminThresholdMs) {
+    } else if (activeTasking.lastTimerStopMs && (nowTimestamp - activeTasking.lastTimerStopMs) > adminThresholdMs) {
       // Timer stopped > threshold ago before clicking End Task Log -> Append note
-      const stopDelaySecs = Math.round((nowMs - activeTasking.lastTimerStopMs) / 1000);
+      const stopDelaySecs = Math.round((nowTimestamp - activeTasking.lastTimerStopMs) / 1000);
       const appendNote = `\n[Note: ${formatDuration(stopDelaySecs)} were spent working on the task after the Hubstaff timer was stopped.]`;
 
       // Update recent session log entries with appended note
@@ -404,7 +415,7 @@ export default function Home() {
       });
     }
 
-    setLastCompletedTaskEndTime(nowMs);
+    setLastCompletedTaskEndTime(nowTimestamp);
     const endedTitle = activeTasking.title;
     clearActiveTasking();
 
@@ -513,23 +524,26 @@ export default function Home() {
         description={`Are you sure you want to cancel tasking for '${activeTasking.title}'? Any Hubstaff timer segments tracked during this session will be converted to Administrative Time and will NOT count as a completed task.`}
         confirmText="Yes, Cancel Task Session"
         isDestructive={true}
-        onConfirm={confirmCancelTasking}
         onCancel={() => setIsCancelModalOpen(false)}
+        onConfirm={confirmCancelTasking}
       />
 
       {/* Task Group Breakdown Modal */}
       <TaskGroupModal
         isOpen={isGroupModalOpen()}
+        onClose={() => setIsGroupModalOpen(false)}
         subrole={activeGroupData().subrole}
         title={activeGroupData().title}
         groupTasks={activeGroupData().tasks}
-        onClose={() => setIsGroupModalOpen(false)}
-        onEditTask={openEditModal}
+        onEditTask={(task) => {
+          setIsGroupModalOpen(false);
+          setEditingTask(task);
+          setIsEditModalOpen(true);
+        }}
         onDeleteTask={(id) => {
           deleteTaskLog(id);
           const updated = tasks.filter((t) => t.subrole === activeGroupData().subrole && t.title === activeGroupData().title && t.title !== "Administrative Time");
           if (updated.length === 0) setIsGroupModalOpen(false);
-          else setActiveGroupData((prev) => ({ ...prev, tasks: updated }));
         }}
       />
 
@@ -538,11 +552,17 @@ export default function Home() {
         task={editingTask()}
         isOpen={isEditModalOpen()}
         onClose={() => setIsEditModalOpen(false)}
-        onSave={handleSaveEditedTask}
+        onSave={(id, updated) => {
+          updateTaskLog(id, updated);
+          setNotificationMsg("Task updated.");
+          setShowNotification(true);
+          setTimeout(() => setShowNotification(false), 3000);
+        }}
       />
 
       {/* Top Banner Context Note */}
       <div class="bg-gradient-to-r from-slate-900 via-sky-950/40 to-slate-900 border border-sky-900/40 rounded-2xl p-6 shadow-xl relative overflow-hidden">
+        <div class="absolute top-0 right-0 w-80 h-80 bg-sky-500/5 rounded-full blur-3xl -z-10 pointer-events-none" />
         <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
             <div class="flex items-center space-x-2 text-sky-400 text-xs font-semibold uppercase tracking-wider mb-1">
@@ -591,8 +611,15 @@ export default function Home() {
                   <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
                       <span>Role <span class="text-rose-400">*</span></span>
-                      <Show when={activeTasking.isTasking && !unlockedFields().role}>
-                        <span class="text-[9px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800" title="Double-click dropdown to edit">🔒 Locked (Double-click)</span>
+                      <Show when={activeTasking.isTasking}>
+                        <button
+                          type="button"
+                          onClick={() => setUnlockedFields((prev) => ({ ...prev, role: !prev.role }))}
+                          class="text-[9px] bg-slate-950 text-slate-300 hover:text-white px-2 py-0.5 rounded border border-slate-700 hover:border-sky-500 transition-colors cursor-pointer"
+                          title="Click or double-click to unlock"
+                        >
+                          {unlockedFields().role ? "🔓 Unlocked" : "🔒 Locked (Click to edit)"}
+                        </button>
                       </Show>
                     </label>
                     <div
@@ -607,7 +634,9 @@ export default function Home() {
                           setSelectedRole(r);
                           if (activeTasking.isTasking) updateActiveTasking({ role: r });
                         }}
-                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none disabled:opacity-60 cursor-pointer"
+                        class={`w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer ${
+                          activeBilledInfo().activeTimer || (activeTasking.isTasking && !unlockedFields().role) ? "opacity-75 cursor-not-allowed" : ""
+                        }`}
                       >
                         <For each={getUserAvailableRoles()}>
                           {(role) => <option value={role}>{role}</option>}
@@ -625,8 +654,15 @@ export default function Home() {
                 <div>
                   <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
                     <span>Subrole <span class="text-rose-400">*</span></span>
-                    <Show when={activeTasking.isTasking && !unlockedFields().subrole}>
-                      <span class="text-[9px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800" title="Double-click dropdown to edit">🔒 Locked (Double-click)</span>
+                    <Show when={activeTasking.isTasking}>
+                      <button
+                        type="button"
+                        onClick={() => setUnlockedFields((prev) => ({ ...prev, subrole: !prev.subrole }))}
+                        class="text-[9px] bg-slate-950 text-slate-300 hover:text-white px-2 py-0.5 rounded border border-slate-700 hover:border-sky-500 transition-colors cursor-pointer"
+                        title="Click or double-click to unlock"
+                      >
+                        {unlockedFields().subrole ? "🔓 Unlocked" : "🔒 Locked (Click to edit)"}
+                      </button>
                     </Show>
                   </label>
                   <div
@@ -641,7 +677,9 @@ export default function Home() {
                         setSelectedSubrole(sr);
                         if (activeTasking.isTasking) updateActiveTasking({ subrole: sr });
                       }}
-                      class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none disabled:opacity-60 cursor-pointer"
+                      class={`w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer ${
+                        activeTasking.isTasking && !unlockedFields().subrole ? "opacity-75 cursor-not-allowed" : ""
+                      }`}
                     >
                       <For each={SUBROLES_BY_ROLE[selectedRole()]}>
                         {(subrole) => <option value={subrole}>{subrole}</option>}
@@ -661,14 +699,21 @@ export default function Home() {
                 <div>
                   <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
                     <span>Task Title <span class="text-rose-400">*</span></span>
-                    <Show when={activeTasking.isTasking && !unlockedFields().title}>
-                      <span class="text-[9px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800" title="Double-click input to edit">🔒 Locked (Double-click)</span>
+                    <Show when={activeTasking.isTasking}>
+                      <button
+                        type="button"
+                        onClick={() => setUnlockedFields((prev) => ({ ...prev, title: !prev.title }))}
+                        class="text-[9px] bg-slate-950 text-slate-300 hover:text-white px-2 py-0.5 rounded border border-slate-700 hover:border-sky-500 transition-colors cursor-pointer"
+                        title="Click or double-click to unlock"
+                      >
+                        {unlockedFields().title ? "🔓 Unlocked" : "🔒 Locked (Click to edit)"}
+                      </button>
                     </Show>
                   </label>
                   <input
                     type="text"
                     required
-                    disabled={activeTasking.isTasking && !unlockedFields().title}
+                    readOnly={activeTasking.isTasking && !unlockedFields().title}
                     onDblClick={() => setUnlockedFields((prev) => ({ ...prev, title: !prev.title }))}
                     placeholder="e.g. gnLokxh8Gsk or 4081768869215654175"
                     value={taskTitle()}
@@ -677,20 +722,29 @@ export default function Home() {
                       setTaskTitle(val);
                       if (activeTasking.isTasking) updateActiveTasking({ title: val });
                     }}
-                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60"
+                    class={`w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 ${
+                      activeTasking.isTasking && !unlockedFields().title ? 'cursor-not-allowed opacity-75' : ''
+                    }`}
                   />
                 </div>
 
                 <div>
                   <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
                     <span>Task URL</span>
-                    <Show when={activeTasking.isTasking && !unlockedFields().url}>
-                      <span class="text-[9px] bg-slate-950 text-slate-400 px-1.5 py-0.5 rounded border border-slate-800" title="Double-click input to edit">🔒 Locked (Double-click)</span>
+                    <Show when={activeTasking.isTasking}>
+                      <button
+                        type="button"
+                        onClick={() => setUnlockedFields((prev) => ({ ...prev, url: !prev.url }))}
+                        class="text-[9px] bg-slate-950 text-slate-300 hover:text-white px-2 py-0.5 rounded border border-slate-700 hover:border-sky-500 transition-colors cursor-pointer"
+                        title="Click or double-click to unlock"
+                      >
+                        {unlockedFields().url ? "🔓 Unlocked" : "🔒 Locked (Click to edit)"}
+                      </button>
                     </Show>
                   </label>
                   <input
                     type="url"
-                    disabled={activeTasking.isTasking && !unlockedFields().url}
+                    readOnly={activeTasking.isTasking && !unlockedFields().url}
                     onDblClick={() => setUnlockedFields((prev) => ({ ...prev, url: !prev.url }))}
                     placeholder="https://feather.openai.com/tasks/..."
                     value={taskUrl()}
@@ -699,7 +753,9 @@ export default function Home() {
                       setTaskUrl(val);
                       if (activeTasking.isTasking) updateActiveTasking({ url: val });
                     }}
-                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 disabled:opacity-60"
+                    class={`w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 ${
+                      activeTasking.isTasking && !unlockedFields().url ? 'cursor-not-allowed opacity-75' : ''
+                    }`}
                   />
                 </div>
               </div>
@@ -729,7 +785,7 @@ export default function Home() {
                   fallback={
                     <button
                       type="submit"
-                      class="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-sky-950 transition-all flex items-center justify-center space-x-2"
+                      class="w-full sm:w-auto px-6 py-3 bg-gradient-to-r from-sky-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-sky-950 transition-all flex items-center justify-center space-x-2 cursor-pointer"
                     >
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -743,7 +799,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={() => setIsCancelModalOpen(true)}
-                      class="px-4 py-3 bg-slate-950 border border-rose-900/60 hover:bg-rose-950/40 text-rose-400 font-semibold rounded-xl text-sm transition-all flex items-center space-x-1.5"
+                      class="px-4 py-3 bg-slate-950 border border-rose-900/60 hover:bg-rose-950/40 text-rose-400 font-semibold rounded-xl text-sm transition-all flex items-center space-x-1.5 cursor-pointer"
                     >
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
@@ -754,7 +810,7 @@ export default function Home() {
                     <button
                       type="button"
                       onClick={handleEndTaskLog}
-                      class="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-950 transition-all flex items-center justify-center space-x-2"
+                      class="flex-1 sm:flex-initial px-6 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-semibold rounded-xl text-sm shadow-lg shadow-emerald-950 transition-all flex items-center justify-center space-x-2 cursor-pointer"
                     >
                       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />

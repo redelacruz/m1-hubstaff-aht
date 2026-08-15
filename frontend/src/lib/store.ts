@@ -214,10 +214,11 @@ const loadInitialActiveTasking = (): ActiveTaskingSession => {
 export const [activeTasking, setActiveTasking] = createStore<ActiveTaskingSession>(loadInitialActiveTasking());
 
 export const updateActiveTasking = (fields: Partial<ActiveTaskingSession>) => {
+  const nextState: ActiveTaskingSession = { ...activeTasking, ...fields };
   setActiveTasking(fields);
   if (typeof window !== "undefined" && window.localStorage) {
     try {
-      localStorage.setItem(ACTIVE_TASKING_STORAGE_KEY, JSON.stringify(activeTasking));
+      localStorage.setItem(ACTIVE_TASKING_STORAGE_KEY, JSON.stringify(nextState));
     } catch (e) {
       console.warn("Error saving active tasking session to localStorage:", e);
     }
@@ -316,6 +317,9 @@ export const saveStateToLocalStorage = () => {
 export const updateUserSettings = (newSettings: Partial<UserSettings>) => {
   if (newSettings.defaultRole !== undefined) setSettings("defaultRole", newSettings.defaultRole);
   if (newSettings.trackingStartDate !== undefined) setSettings("trackingStartDate", newSettings.trackingStartDate);
+  if (newSettings.reconciliationIntervalHours !== undefined) setSettings("reconciliationIntervalHours", newSettings.reconciliationIntervalHours);
+  if (newSettings.reconciliationLookbackDays !== undefined) setSettings("reconciliationLookbackDays", newSettings.reconciliationLookbackDays);
+  if (newSettings.adminInactivityThresholdMinutes !== undefined) setSettings("adminInactivityThresholdMinutes", newSettings.adminInactivityThresholdMinutes);
   if (newSettings.pageSize !== undefined) setSettings("pageSize", newSettings.pageSize);
   if (newSettings.hubstaffPageSize !== undefined) setSettings("hubstaffPageSize", newSettings.hubstaffPageSize);
 
@@ -364,6 +368,28 @@ export const hydrateStoreFromLocalStorage = () => {
       }
       if (parsed.hubstaffTime) {
         setHubstaffTime(parsed.hubstaffTime);
+      }
+    }
+
+    // Re-hydrate activeTasking session
+    const savedActiveTasking = localStorage.getItem(ACTIVE_TASKING_STORAGE_KEY);
+    if (savedActiveTasking) {
+      try {
+        const parsed = JSON.parse(savedActiveTasking);
+        if (parsed && typeof parsed.isTasking === "boolean") {
+          setActiveTasking(parsed);
+        }
+      } catch (e) {
+        console.warn("Error re-hydrating activeTasking from localStorage:", e);
+      }
+    }
+
+    // Re-hydrate last completed task end timestamp
+    const savedLastEnd = localStorage.getItem(LAST_END_TASK_STORAGE_KEY);
+    if (savedLastEnd) {
+      const parsed = parseInt(savedLastEnd, 10);
+      if (!isNaN(parsed)) {
+        setLastCompletedTaskEndTimeState(parsed);
       }
     }
   } catch (e) {
@@ -1248,8 +1274,8 @@ export const getUserAvailableRoles = (): Role[] => {
     return ["Reviewer"];
   }
 
-  // Exception: If user has no projects and no prior data, default to only Trainer
-  return ["Trainer"];
+  // Exception: If user has no projects and no prior data, default to both roles
+  return ["Reviewer", "Trainer"];
 };
 
 export const getEffectiveUserRole = (): Role => {

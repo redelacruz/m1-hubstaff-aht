@@ -66,6 +66,61 @@ async def exchange_pat_for_tokens(pat_token: str) -> Dict[str, Any]:
             )
 
 
+async def get_valid_access_token(user_id: str, db: AsyncSession, force_refresh: bool = False) -> str:
+    """
+    Retrieves a valid Hubstaff access token for the user.
+    If the token has expired, is expiring within 5 minutes, or force_refresh is True,
+    it refreshes the access token using the stored refresh_token (or pat_token fallback),
+    updates the credentials in the database, and returns the new access token.
+    """
+    cred_res = await db.execute(select(HubstaffCredential).where(HubstaffCredential.user_id == user_id))
+    credential = cred_res.scalar_one_or_none()
+    if not credential:
+        raise HTTPException(status_code=400, detail="Hubstaff account is not connected.")
+
+    now_utc = datetime.now(timezone.utc)
+
+    # If token is still valid with >= 5 min buffer and force_refresh is False, return it
+    if (
+        not force_refresh
+        and credential.token_expires_at
+        and credential.token_expires_at > (now_utc + timedelta(minutes=5))
+        and credential.access_token
+    ):
+        return credential.access_token
+
+    # Token is expired or expiring soon, rotate/refresh using refresh_token or pat_token
+    token_to_use = credential.refresh_token or credential.pat_token
+    if not token_to_use:
+        raise HTTPException(status_code=401, detail="No refresh token or PAT available to renew access token.")
+
+    logger.info(f"Renewing Hubstaff access token for user {user_id} (force_refresh={force_refresh})...")
+    try:
+        token_data = await exchange_pat_for_tokens(token_to_use)
+    except Exception as e:
+        # Fallback to pat_token if refresh_token exchange failed and pat_token differs
+        if credential.pat_token and token_to_use != credential.pat_token:
+            logger.info("Refresh token exchange failed, falling back to stored PAT...")
+            token_data = await exchange_pat_for_tokens(credential.pat_token)
+        else:
+            raise e
+
+    new_access_token = token_data["access_token"]
+    new_refresh_token = token_data.get("refresh_token", token_to_use)
+    expires_in = token_data.get("expires_in", 86400)
+    new_expires_at = now_utc + timedelta(seconds=expires_in)
+
+    credential.access_token = new_access_token
+    credential.refresh_token = new_refresh_token
+    credential.token_expires_at = new_expires_at
+    await db.commit()
+    logger.info(
+        f"Successfully refreshed Hubstaff access token for user {user_id}. Expires at {new_expires_at}."
+    )
+
+    return new_access_token
+
+
 async def fetch_user_me(access_token: str) -> Dict[str, Any]:
     """
     Fetches the profile of the authenticated user from Hubstaff V2 API.
@@ -219,7 +274,16 @@ async def sync_user_organizations_and_projects(user_id: str, access_token: str, 
     Fetches organizations from Hubstaff API, saves them into PostgreSQL,
     and populates projects specifically for the Micro1 organization.
     """
-    orgs_data = await fetch_user_organizations(access_token)
+    access_token = await get_valid_access_token(user_id, db)
+    try:
+        orgs_data = await fetch_user_organizations(access_token)
+    except HTTPException as e:
+        if e.status_code == 401:
+            logger.info("fetch_user_organizations returned 401. Refreshing token and retrying...")
+            access_token = await get_valid_access_token(user_id, db, force_refresh=True)
+            orgs_data = await fetch_user_organizations(access_token)
+        else:
+            raise e
 
     # Wipe existing orgs for this user (projects will cascade delete automatically)
     await db.execute(delete(Organization).where(Organization.user_id == user_id))
@@ -367,10 +431,11 @@ async def fetch_organization_tracking_states(
     organization_id: str,
     start_iso: str,
     stop_iso: str,
-) -> List[Dict[str, Any]]:
+) -> Tuple[int, List[Dict[str, Any]]]:
     """
     Fetches tracking states from GET /v2/organizations/{organization_id}/tracking_states
     within the specified start and stop ISO 8601 time window.
+    Returns (status_code, tracking_states_list).
     """
     headers = {
         "Authorization": f"Bearer {access_token}",
@@ -388,15 +453,15 @@ async def fetch_organization_tracking_states(
             response = await client.get(url, headers=headers, params=params)
             if response.status_code == 200:
                 data = response.json()
-                return data.get("tracking_states", [])
+                return 200, data.get("tracking_states", [])
             else:
                 logger.warning(
                     f"Hubstaff API tracking_states error status {response.status_code}: {response.text}"
                 )
-                return []
+                return response.status_code, []
         except httpx.RequestError as e:
             logger.warning(f"Unable to connect to Hubstaff tracking_states API: {e}")
-            return []
+            return 502, []
 
 
 async def sync_user_tracking_states(
@@ -411,6 +476,9 @@ async def sync_user_tracking_states(
     2. Prunes local database events within the prune window that no longer exist on Hubstaff.
     3. Adjusts user's tracking_start_date if a gap is detected.
     """
+    # Ensure fresh access token before starting
+    access_token = await get_valid_access_token(user_id, db)
+
     # 1. Fetch user settings
     settings_res = await db.execute(select(UserSettings).where(UserSettings.user_id == user_id))
     user_settings = settings_res.scalar_one_or_none()
@@ -461,7 +529,15 @@ async def sync_user_tracking_states(
             start_str = chunk_start.strftime("%Y-%m-%dT%H:%M:%SZ")
             stop_str = current_stop.strftime("%Y-%m-%dT%H:%M:%SZ")
 
-            raw_events = await fetch_organization_tracking_states(access_token, org.id, start_str, stop_str)
+            status_code, raw_events = await fetch_organization_tracking_states(
+                access_token, org.id, start_str, stop_str
+            )
+            if status_code == 401:
+                logger.info("Hubstaff tracking_states returned 401. Refreshing access token and retrying...")
+                access_token = await get_valid_access_token(user_id, db, force_refresh=True)
+                status_code, raw_events = await fetch_organization_tracking_states(
+                    access_token, org.id, start_str, stop_str
+                )
 
             for evt in raw_events:
                 evt_id_str = str(evt["id"])
@@ -585,6 +661,7 @@ async def subscribe_user_webhooks(
     Endpoint: POST /v2/users/me/webhooks
     Saves subscription record into PostgreSQL webhook_subscriptions table.
     """
+    access_token = await get_valid_access_token(user_id, db)
     target_url = "https://hubstaff-data.redelacruz.com/api/hubstaff/webhook"
     events = ["timer.start", "timer.stop"]
 
@@ -618,6 +695,12 @@ async def subscribe_user_webhooks(
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         try:
             response = await client.post(url, headers=headers, json=body)
+            if response.status_code == 401:
+                logger.info("Hubstaff webhook subscription returned 401. Refreshing token and retrying...")
+                access_token = await get_valid_access_token(user_id, db, force_refresh=True)
+                headers["Authorization"] = f"Bearer {access_token}"
+                response = await client.post(url, headers=headers, json=body)
+
             if response.status_code in (200, 201):
                 res_data = response.json()
                 webhook_obj = res_data.get("webhook", res_data)

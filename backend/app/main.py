@@ -10,7 +10,7 @@ from app.config import settings
 from app.database import get_db, engine, Base, AsyncSessionLocal
 import app.models  # Register models with SQLAlchemy Base metadata
 from app.routers import hubstaff
-from app.services.hubstaff import sync_user_tracking_states
+from app.services.hubstaff import sync_user_tracking_states, get_valid_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -28,12 +28,9 @@ async def start_periodic_reconciliation_task():
                 user_res = await db.execute(select(app.models.User).limit(1))
                 user = user_res.scalar_one_or_none()
                 if user:
-                    cred_res = await db.execute(
-                        select(app.models.HubstaffCredential).where(app.models.HubstaffCredential.user_id == user.id)
-                    )
-                    credential = cred_res.scalar_one_or_none()
-                    if credential and credential.access_token:
-                        await sync_user_tracking_states(user.id, credential.access_token, db, max_days=7)
+                    access_token = await get_valid_access_token(user.id, db)
+                    if access_token:
+                        await sync_user_tracking_states(user.id, access_token, db, max_days=7)
                         logger.info("Completed scheduled 12-hour 7-day background reconciliation.")
         except asyncio.CancelledError:
             break

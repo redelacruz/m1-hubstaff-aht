@@ -27,6 +27,7 @@ from app.services.hubstaff import (
     sync_user_organizations_and_projects,
     sync_user_tracking_states,
     subscribe_user_webhooks,
+    get_valid_access_token,
 )
 
 logger = logging.getLogger(__name__)
@@ -195,12 +196,8 @@ async def sync_organizations_endpoint(db: AsyncSession = Depends(get_db)):
     if not user:
         raise HTTPException(status_code=404, detail="No user found.")
 
-    cred_result = await db.execute(select(HubstaffCredential).where(HubstaffCredential.user_id == user.id))
-    credential = cred_result.scalar_one_or_none()
-    if not credential or not credential.access_token:
-        raise HTTPException(status_code=400, detail="Hubstaff account is not connected.")
-
-    await sync_user_organizations_and_projects(user.id, credential.access_token, db)
+    access_token = await get_valid_access_token(user.id, db)
+    await sync_user_organizations_and_projects(user.id, access_token, db)
     return {"success": True, "message": "Organizations and projects synced successfully."}
 
 
@@ -214,14 +211,10 @@ async def sync_tracking_states_endpoint(
     if not user:
         raise HTTPException(status_code=404, detail="No user found.")
 
-    cred_result = await db.execute(select(HubstaffCredential).where(HubstaffCredential.user_id == user.id))
-    credential = cred_result.scalar_one_or_none()
-    if not credential or not credential.access_token:
-        raise HTTPException(status_code=400, detail="Hubstaff account is not connected.")
-
-    sync_result = await sync_user_tracking_states(user.id, credential.access_token, db, max_days=days)
+    access_token = await get_valid_access_token(user.id, db)
+    sync_result = await sync_user_tracking_states(user.id, access_token, db, max_days=days)
     try:
-        await subscribe_user_webhooks(user.id, credential.access_token, db)
+        await subscribe_user_webhooks(user.id, access_token, db)
     except Exception:
         pass
     return sync_result

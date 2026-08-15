@@ -128,9 +128,10 @@ export default function Home() {
       if (activeTasking.isTasking && activeTasking.timerStartMs) {
         const segSecs = Math.max(1, Math.round((Date.now() - activeTasking.timerStartMs) / 1000));
         
-        // Check if there was a delayed timer start (>10m)
+        // Check if there was a delayed timer start (> threshold)
         let segNotes = activeTasking.notes || "";
-        if (activeTasking.startTimeMs && (activeTasking.timerStartMs - activeTasking.startTimeMs) > 600000) {
+        const adminThresholdMs = (settings.adminInactivityThresholdMinutes ?? 10) * 60 * 1000;
+        if (activeTasking.startTimeMs && (activeTasking.timerStartMs - activeTasking.startTimeMs) > adminThresholdMs) {
           const delaySecs = Math.round((activeTasking.timerStartMs - activeTasking.startTimeMs) / 1000);
           segNotes += `\n[Note: ${formatDuration(delaySecs)} were spent working on the task before the Hubstaff timer was started.]`;
         }
@@ -272,26 +273,28 @@ export default function Home() {
     const nowMs = Date.now();
     const info = activeBilledInfo();
 
-    // Check pre-session timer state (>10m excess admin logging)
+    const adminThresholdSecs = (settings.adminInactivityThresholdMinutes ?? 10) * 60;
+
+    // Check pre-session timer state (> threshold excess admin logging)
     if (info.activeTimer && info.activeStartMs) {
       const diffSecs = Math.round((nowMs - info.activeStartMs) / 1000);
-      if (diffSecs >= 600) {
+      if (diffSecs >= adminThresholdSecs) {
         addTaskLog({
           role: selectedRole(),
           subrole: "Administrative",
           title: "Administrative Time",
           url: "",
           notes: "Pre-tasking excess Hubstaff timer duration logged as administrative time.",
-          durationSeconds: diffSecs - 600,
+          durationSeconds: diffSecs - adminThresholdSecs,
           timerMode: "hubstaff",
         });
       }
     }
 
-    // Check post-task gap (>10m gap since last End Task Log)
+    // Check post-task gap (> threshold gap since last End Task Log)
     if (lastEndTaskLogMs > 0 && info.activeTimer) {
       const gapSecs = Math.round((nowMs - lastEndTaskLogMs) / 1000);
-      if (gapSecs >= 600) {
+      if (gapSecs >= adminThresholdSecs) {
         addTaskLog({
           role: selectedRole(),
           subrole: "Administrative",
@@ -336,7 +339,8 @@ export default function Home() {
       const segSecs = Math.max(1, Math.round((nowMs - activeTasking.timerStartMs) / 1000));
       
       let finalNotes = taskNotes().trim();
-      if (activeTasking.startTimeMs && (activeTasking.timerStartMs - activeTasking.startTimeMs) > 600000) {
+      const adminThresholdMs = (settings.adminInactivityThresholdMinutes ?? 10) * 60 * 1000;
+      if (activeTasking.startTimeMs && (activeTasking.timerStartMs - activeTasking.startTimeMs) > adminThresholdMs) {
         const delaySecs = Math.round((activeTasking.timerStartMs - activeTasking.startTimeMs) / 1000);
         finalNotes += `\n[Note: ${formatDuration(delaySecs)} were spent working on the task before the Hubstaff timer was started.]`;
       }
@@ -350,8 +354,8 @@ export default function Home() {
         durationSeconds: segSecs,
         timerMode: "hubstaff",
       });
-    } else if (activeTasking.lastTimerStopMs && (nowMs - activeTasking.lastTimerStopMs) > 600000) {
-      // Timer stopped >10m ago before clicking End Task Log -> Append note
+    } else if (activeTasking.lastTimerStopMs && (nowMs - activeTasking.lastTimerStopMs) > ((settings.adminInactivityThresholdMinutes ?? 10) * 60 * 1000)) {
+      // Timer stopped > threshold ago before clicking End Task Log -> Append note
       const stopDelaySecs = Math.round((nowMs - activeTasking.lastTimerStopMs) / 1000);
       const appendNote = `\n[Note: ${formatDuration(stopDelaySecs)} were spent working on the task after the Hubstaff timer was stopped.]`;
 

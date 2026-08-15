@@ -19,6 +19,9 @@ export interface RoleThresholds {
 export interface UserSettings {
   defaultRole: Role;
   trackingStartDate: string; // YYYY-MM-DD
+  reconciliationIntervalHours?: number; // 1, 3, 6, 12, 24, 0 (Manual)
+  reconciliationLookbackDays?: number; // 1, 3, 7, 14, 30
+  adminInactivityThresholdMinutes?: number; // default 10
   pageSize: number; // 25, 50, 100
   hubstaffPageSize: number; // 25, 50, 100
   thresholds: {
@@ -134,11 +137,14 @@ export const DEFAULT_USER: UserProfile = {
 export const DEFAULT_SETTINGS: UserSettings = {
   defaultRole: "Reviewer",
   trackingStartDate: "2026-08-01",
+  reconciliationIntervalHours: 12,
+  reconciliationLookbackDays: 7,
+  adminInactivityThresholdMinutes: 10,
   pageSize: 25,
   hubstaffPageSize: 25,
   thresholds: {
-    Trainer: { expectedAhtMinutes: 15, maxAhtMinutes: 25, onboardingMinutes: 120 },
-    Reviewer: { expectedAhtMinutes: 10, maxAhtMinutes: 18, onboardingMinutes: 60 },
+    Trainer: { expectedAhtMinutes: 60, maxAhtMinutes: 70, onboardingMinutes: 120 },
+    Reviewer: { expectedAhtMinutes: 45, maxAhtMinutes: 70, onboardingMinutes: 60 },
   },
 };
 
@@ -323,12 +329,15 @@ export const saveUserSettingsToBackend = async (newSettings: Partial<UserSetting
     const payload = {
       default_role: newSettings.defaultRole || settings.defaultRole,
       tracking_start_date: newSettings.trackingStartDate || settings.trackingStartDate,
-      trainer_expected_aht_minutes: newSettings.thresholds?.Trainer.expectedAhtMinutes ?? settings.thresholds.Trainer.expectedAhtMinutes,
-      trainer_max_aht_minutes: newSettings.thresholds?.Trainer.maxAhtMinutes ?? settings.thresholds.Trainer.maxAhtMinutes,
-      trainer_onboarding_minutes: newSettings.thresholds?.Trainer.onboardingMinutes ?? settings.thresholds.Trainer.onboardingMinutes,
-      reviewer_expected_aht_minutes: newSettings.thresholds?.Reviewer.expectedAhtMinutes ?? settings.thresholds.Reviewer.expectedAhtMinutes,
-      reviewer_max_aht_minutes: newSettings.thresholds?.Reviewer.maxAhtMinutes ?? settings.thresholds.Reviewer.maxAhtMinutes,
-      reviewer_onboarding_minutes: newSettings.thresholds?.Reviewer.onboardingMinutes ?? settings.thresholds.Reviewer.onboardingMinutes,
+      reconciliation_interval_hours: newSettings.reconciliationIntervalHours ?? settings.reconciliationIntervalHours ?? 12,
+      reconciliation_lookback_days: newSettings.reconciliationLookbackDays ?? settings.reconciliationLookbackDays ?? 7,
+      admin_inactivity_threshold_minutes: newSettings.adminInactivityThresholdMinutes ?? settings.adminInactivityThresholdMinutes ?? 10,
+      trainer_expected_aht_minutes: newSettings.thresholds?.Trainer?.expectedAhtMinutes ?? settings.thresholds.Trainer.expectedAhtMinutes,
+      trainer_max_aht_minutes: newSettings.thresholds?.Trainer?.maxAhtMinutes ?? settings.thresholds.Trainer.maxAhtMinutes,
+      trainer_onboarding_minutes: newSettings.thresholds?.Trainer?.onboardingMinutes ?? settings.thresholds.Trainer.onboardingMinutes,
+      reviewer_expected_aht_minutes: newSettings.thresholds?.Reviewer?.expectedAhtMinutes ?? settings.thresholds.Reviewer.expectedAhtMinutes,
+      reviewer_max_aht_minutes: newSettings.thresholds?.Reviewer?.maxAhtMinutes ?? settings.thresholds.Reviewer.maxAhtMinutes,
+      reviewer_onboarding_minutes: newSettings.thresholds?.Reviewer?.onboardingMinutes ?? settings.thresholds.Reviewer.onboardingMinutes,
     };
 
     await fetch(`${getApiBaseUrl()}/api/hubstaff/user-settings`, {
@@ -775,15 +784,18 @@ export const fetchHubstaffStatusFromBackend = async () => {
         updateUserSettings({
           defaultRole: data.user_settings.default_role as Role,
           trackingStartDate: data.user_settings.tracking_start_date,
+          reconciliationIntervalHours: data.user_settings.reconciliation_interval_hours ?? 12,
+          reconciliationLookbackDays: data.user_settings.reconciliation_lookback_days ?? 7,
+          adminInactivityThresholdMinutes: data.user_settings.admin_inactivity_threshold_minutes ?? 10,
           thresholds: {
             Trainer: {
-              expectedAhtMinutes: data.user_settings.trainer_expected_aht_minutes,
-              maxAhtMinutes: data.user_settings.trainer_max_aht_minutes,
+              expectedAhtMinutes: data.user_settings.trainer_expected_aht_minutes ?? 60,
+              maxAhtMinutes: data.user_settings.trainer_max_aht_minutes ?? 70,
               onboardingMinutes: data.user_settings.trainer_onboarding_minutes ?? 120,
             },
             Reviewer: {
-              expectedAhtMinutes: data.user_settings.reviewer_expected_aht_minutes,
-              maxAhtMinutes: data.user_settings.reviewer_max_aht_minutes,
+              expectedAhtMinutes: data.user_settings.reviewer_expected_aht_minutes ?? 45,
+              maxAhtMinutes: data.user_settings.reviewer_max_aht_minutes ?? 70,
               onboardingMinutes: data.user_settings.reviewer_onboarding_minutes ?? 60,
             },
           },

@@ -41,6 +41,17 @@ export default function Settings() {
     settings.thresholds.Reviewer.onboardingMinutes ?? 60
   );
 
+  // Background Reconciliation & Inactivity Thresholds State
+  const [reconciliationIntervalHours, setReconciliationIntervalHours] = createSignal<number>(
+    settings.reconciliationIntervalHours ?? 12
+  );
+  const [reconciliationLookbackDays, setReconciliationLookbackDays] = createSignal<number>(
+    settings.reconciliationLookbackDays ?? 7
+  );
+  const [adminInactivityThreshold, setAdminInactivityThreshold] = createSignal<number>(
+    settings.adminInactivityThresholdMinutes ?? 10
+  );
+
   // Hubstaff PAT Authentication State
   const [patInput, setPatInput] = createSignal<string>("");
   const [showPatToken, setShowPatToken] = createSignal<boolean>(false);
@@ -74,6 +85,9 @@ export default function Settings() {
   createEffect(() => {
     setDefaultRole(settings.defaultRole);
     setTrackingStartDate(settings.trackingStartDate || "2026-08-01");
+    setReconciliationIntervalHours(settings.reconciliationIntervalHours ?? 12);
+    setReconciliationLookbackDays(settings.reconciliationLookbackDays ?? 7);
+    setAdminInactivityThreshold(settings.adminInactivityThresholdMinutes ?? 10);
     setTrainerExpected(settings.thresholds.Trainer.expectedAhtMinutes);
     setTrainerMax(settings.thresholds.Trainer.maxAhtMinutes);
     setReviewerExpected(settings.thresholds.Reviewer.expectedAhtMinutes);
@@ -97,6 +111,9 @@ export default function Settings() {
     const updated = {
       defaultRole: defaultRole(),
       trackingStartDate: trackingStartDate(),
+      reconciliationIntervalHours: Number(reconciliationIntervalHours()),
+      reconciliationLookbackDays: Number(reconciliationLookbackDays()),
+      adminInactivityThresholdMinutes: Number(adminInactivityThreshold()),
       thresholds: {
         Trainer: {
           expectedAhtMinutes: Number(trainerExpected()),
@@ -645,10 +662,10 @@ export default function Settings() {
                   <input
                     type="number"
                     min="1"
-                    max="120"
+                    max="180"
                     value={trainerExpected()}
                     onInput={(e) => setTrainerExpected(parseInt(e.currentTarget.value) || 1)}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                   />
                 </div>
 
@@ -659,10 +676,10 @@ export default function Settings() {
                   <input
                     type="number"
                     min="1"
-                    max="180"
+                    max="240"
                     value={trainerMax()}
                     onInput={(e) => setTrainerMax(parseInt(e.currentTarget.value) || 1)}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                   />
                 </div>
 
@@ -676,7 +693,7 @@ export default function Settings() {
                     max="1440"
                     value={trainerOnboarding()}
                     onInput={(e) => setTrainerOnboarding(parseInt(e.currentTarget.value) || 0)}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
                   />
                   <p class="text-[11px] text-slate-400 mt-1">
                     Billed time excluded from Global Effective AHT calculation.
@@ -699,10 +716,10 @@ export default function Settings() {
                   <input
                     type="number"
                     min="1"
-                    max="120"
+                    max="180"
                     value={reviewerExpected()}
                     onInput={(e) => setReviewerExpected(parseInt(e.currentTarget.value) || 1)}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
 
@@ -713,10 +730,10 @@ export default function Settings() {
                   <input
                     type="number"
                     min="1"
-                    max="180"
+                    max="240"
                     value={reviewerMax()}
                     onInput={(e) => setReviewerMax(parseInt(e.currentTarget.value) || 1)}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                 </div>
 
@@ -730,7 +747,7 @@ export default function Settings() {
                     max="1440"
                     value={reviewerOnboarding()}
                     onInput={(e) => setReviewerOnboarding(parseInt(e.currentTarget.value) || 0)}
-                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-purple-500"
                   />
                   <p class="text-[11px] text-slate-400 mt-1">
                     Billed time excluded from Global Effective AHT calculation.
@@ -741,57 +758,102 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* CARD 3: Hubstaff Data Sync Start Date */}
-        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+        {/* CARD 3: Hubstaff Data & Background Synchronization */}
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
           <div class="pb-3 border-b border-slate-800">
             <h2 class="text-base font-bold text-white flex items-center space-x-2">
               <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
-              <span>Hubstaff Data Sync Start Date</span>
+              <span>Hubstaff Data & Background Synchronization</span>
             </h2>
             <p class="text-xs text-slate-400 mt-1">
-              Determines the historical start date used by Hubstaff sync operations when requesting activity and timer data.
+              Configure automatic background reconciliation frequency and historical data sync parameters.
             </p>
           </div>
 
-          <div class="flex flex-col sm:flex-row sm:items-center gap-4 pt-2">
-            <div class="flex-1 max-w-sm">
-              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
-                Tracking Start Date
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Reconciliation Interval */}
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-3">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Background Reconciliation Frequency
               </label>
-
-              <div
-                onClick={() => dateInputRef?.showPicker()}
-                title="Open calendar picker"
-                class="relative w-full bg-slate-950 border border-slate-700 hover:border-slate-600 rounded-xl px-4 py-2.5 flex items-center justify-between cursor-pointer transition-all focus-within:ring-2 focus-within:ring-sky-500 group shadow-sm"
+              <select
+                value={reconciliationIntervalHours()}
+                onChange={(e) => setReconciliationIntervalHours(parseInt(e.currentTarget.value))}
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
               >
-                <span class="text-slate-100 text-sm font-semibold tracking-wide">
-                  {formatHumanDate(trackingStartDate())}
-                </span>
-
-                <div class="flex items-center space-x-2 text-slate-300 group-hover:text-white">
-                  <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                </div>
-
-                <input
-                  ref={dateInputRef}
-                  type="date"
-                  value={trackingStartDate()}
-                  onInput={(e) => setTrackingStartDate(e.currentTarget.value)}
-                  onClick={(e) => {
-                    try {
-                      e.currentTarget.showPicker();
-                    } catch (err) { }
-                  }}
-                  class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
-                />
-              </div>
+                <option value="1">Every 1 Hour</option>
+                <option value="3">Every 3 Hours</option>
+                <option value="6">Every 6 Hours</option>
+                <option value="12">Every 12 Hours (Twice Daily - Default)</option>
+                <option value="24">Every 24 Hours (Once Daily)</option>
+                <option value="0">Manual Only (Disable Background Sync)</option>
+              </select>
+              <p class="text-[11px] text-slate-400">
+                How often the background worker reaches out to Hubstaff API to reconcile missing events.
+              </p>
             </div>
 
-            <div class="pt-0 sm:pt-6">
+            {/* Lookback Window */}
+            <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-3">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Reconciliation Lookback Window
+              </label>
+              <select
+                value={reconciliationLookbackDays()}
+                onChange={(e) => setReconciliationLookbackDays(parseInt(e.currentTarget.value))}
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+              >
+                <option value="1">1 Day</option>
+                <option value="3">3 Days</option>
+                <option value="7">7 Days (Default)</option>
+                <option value="14">14 Days</option>
+                <option value="30">30 Days</option>
+              </select>
+              <p class="text-[11px] text-slate-400">
+                Number of past days queried during each scheduled background reconciliation run.
+              </p>
+            </div>
+          </div>
+
+          {/* Historical Start Date */}
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-3">
+            <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400">
+              Tracking Start Date
+            </label>
+            <div class="flex flex-col sm:flex-row sm:items-center gap-4">
+              <div class="flex-1 max-w-sm">
+                <div
+                  onClick={() => dateInputRef?.showPicker()}
+                  title="Open calendar picker"
+                  class="relative w-full bg-slate-900 border border-slate-700 hover:border-slate-600 rounded-xl px-4 py-2.5 flex items-center justify-between cursor-pointer transition-all focus-within:ring-2 focus-within:ring-sky-500 group shadow-sm"
+                >
+                  <span class="text-slate-100 text-sm font-semibold tracking-wide">
+                    {formatHumanDate(trackingStartDate())}
+                  </span>
+
+                  <div class="flex items-center space-x-2 text-slate-300 group-hover:text-white">
+                    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+
+                  <input
+                    ref={dateInputRef}
+                    type="date"
+                    value={trackingStartDate()}
+                    onInput={(e) => setTrackingStartDate(e.currentTarget.value)}
+                    onClick={(e) => {
+                      try {
+                        e.currentTarget.showPicker();
+                      } catch (err) { }
+                    }}
+                    class="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  />
+                </div>
+              </div>
+
               <button
                 type="button"
                 onClick={handleSyncFromStartDate}
@@ -804,6 +866,45 @@ export default function Settings() {
                 <span>{isSyncing() ? "Syncing..." : "Sync Hubstaff Data"}</span>
               </button>
             </div>
+            <p class="text-[11px] text-slate-400">
+              Determines the historical boundary date used when performing manual full synchronizations.
+            </p>
+          </div>
+        </div>
+
+        {/* CARD 4: Task Tracking & Inactivity Rules */}
+        <div class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+          <div class="pb-3 border-b border-slate-800">
+            <h2 class="text-base font-bold text-white flex items-center space-x-2">
+              <svg class="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <span>Task Tracking & Administrative Inactivity</span>
+            </h2>
+            <p class="text-xs text-slate-400 mt-1">
+              Configure inactivity time limits governing Active Tasking preparation notes and inter-task continuous gap tracking.
+            </p>
+          </div>
+
+          <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-3">
+            <div class="max-w-xs">
+              <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-1.5">
+                Administrative Inactivity Threshold (Minutes)
+              </label>
+              <input
+                type="number"
+                min="1"
+                max="120"
+                value={adminInactivityThreshold()}
+                onInput={(e) => setAdminInactivityThreshold(parseInt(e.currentTarget.value) || 1)}
+                class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-white font-mono focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+            </div>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              <strong>Governs two inactivity rules:</strong><br />
+              1. <strong>Task Setup Delay:</strong> If the Hubstaff timer starts after this delay following "Start Task Log", a setup delay note is recorded.<br />
+              2. <strong>Inter-Task Inactivity Gap:</strong> If the Hubstaff timer continues running between tasks for longer than this duration, an Administrative Time log is automatically created.
+            </p>
           </div>
         </div>
 

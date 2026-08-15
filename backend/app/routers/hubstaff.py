@@ -42,11 +42,14 @@ class PatSubmissionRequest(BaseModel):
 class UserSettingsUpdateRequest(BaseModel):
     default_role: str = Field("Reviewer", description="Default role ('Trainer' or 'Reviewer')")
     tracking_start_date: str = Field("2026-08-01", description="Tracking start date YYYY-MM-DD")
-    trainer_expected_aht_minutes: float = Field(15.0, ge=1.0)
-    trainer_max_aht_minutes: float = Field(25.0, ge=1.0)
+    reconciliation_interval_hours: int = Field(12, ge=0, description="Hours between periodic background reconciliation (0 = manual only)")
+    reconciliation_lookback_days: int = Field(7, ge=1, description="Days lookback window for background reconciliation")
+    admin_inactivity_threshold_minutes: int = Field(10, ge=1, description="Inactivity threshold in minutes for prep delay notes and gap admin tracking")
+    trainer_expected_aht_minutes: float = Field(60.0, ge=1.0)
+    trainer_max_aht_minutes: float = Field(70.0, ge=1.0)
     trainer_onboarding_minutes: float = Field(120.0, ge=0.0)
-    reviewer_expected_aht_minutes: float = Field(10.0, ge=1.0)
-    reviewer_max_aht_minutes: float = Field(18.0, ge=1.0)
+    reviewer_expected_aht_minutes: float = Field(45.0, ge=1.0)
+    reviewer_max_aht_minutes: float = Field(70.0, ge=1.0)
     reviewer_onboarding_minutes: float = Field(60.0, ge=0.0)
 
 
@@ -177,11 +180,14 @@ async def get_hubstaff_status(db: AsyncSession = Depends(get_db)):
         "user_settings": {
             "default_role": user_setting.default_role if user_setting else "Reviewer",
             "tracking_start_date": str(user_setting.tracking_start_date) if user_setting else "2026-08-01",
-            "trainer_expected_aht_minutes": float(user_setting.trainer_expected_aht_minutes) if user_setting else 15.0,
-            "trainer_max_aht_minutes": float(user_setting.trainer_max_aht_minutes) if user_setting else 25.0,
+            "reconciliation_interval_hours": int(getattr(user_setting, "reconciliation_interval_hours", 12) or 12) if user_setting else 12,
+            "reconciliation_lookback_days": int(getattr(user_setting, "reconciliation_lookback_days", 7) or 7) if user_setting else 7,
+            "admin_inactivity_threshold_minutes": int(getattr(user_setting, "admin_inactivity_threshold_minutes", 10) or 10) if user_setting else 10,
+            "trainer_expected_aht_minutes": float(user_setting.trainer_expected_aht_minutes) if user_setting else 60.0,
+            "trainer_max_aht_minutes": float(user_setting.trainer_max_aht_minutes) if user_setting else 70.0,
             "trainer_onboarding_minutes": float(getattr(user_setting, "trainer_onboarding_minutes", 120.0) or 120.0) if user_setting else 120.0,
-            "reviewer_expected_aht_minutes": float(user_setting.reviewer_expected_aht_minutes) if user_setting else 10.0,
-            "reviewer_max_aht_minutes": float(user_setting.reviewer_max_aht_minutes) if user_setting else 18.0,
+            "reviewer_expected_aht_minutes": float(user_setting.reviewer_expected_aht_minutes) if user_setting else 45.0,
+            "reviewer_max_aht_minutes": float(user_setting.reviewer_max_aht_minutes) if user_setting else 70.0,
             "reviewer_onboarding_minutes": float(getattr(user_setting, "reviewer_onboarding_minutes", 60.0) or 60.0) if user_setting else 60.0,
         } if user_setting else None,
         "organizations": orgs_payload,
@@ -421,6 +427,9 @@ async def update_db_user_settings(request: UserSettingsUpdateRequest, db: AsyncS
             user_id=user.id,
             default_role=request.default_role,
             tracking_start_date=parsed_date,
+            reconciliation_interval_hours=request.reconciliation_interval_hours,
+            reconciliation_lookback_days=request.reconciliation_lookback_days,
+            admin_inactivity_threshold_minutes=request.admin_inactivity_threshold_minutes,
             trainer_expected_aht_minutes=request.trainer_expected_aht_minutes,
             trainer_max_aht_minutes=request.trainer_max_aht_minutes,
             trainer_onboarding_minutes=request.trainer_onboarding_minutes,
@@ -432,14 +441,15 @@ async def update_db_user_settings(request: UserSettingsUpdateRequest, db: AsyncS
     else:
         user_setting.default_role = request.default_role
         user_setting.tracking_start_date = parsed_date
+        user_setting.reconciliation_interval_hours = request.reconciliation_interval_hours
+        user_setting.reconciliation_lookback_days = request.reconciliation_lookback_days
+        user_setting.admin_inactivity_threshold_minutes = request.admin_inactivity_threshold_minutes
         user_setting.trainer_expected_aht_minutes = request.trainer_expected_aht_minutes
         user_setting.trainer_max_aht_minutes = request.trainer_max_aht_minutes
         user_setting.trainer_onboarding_minutes = request.trainer_onboarding_minutes
         user_setting.reviewer_expected_aht_minutes = request.reviewer_expected_aht_minutes
         user_setting.reviewer_max_aht_minutes = request.reviewer_max_aht_minutes
         user_setting.reviewer_onboarding_minutes = request.reviewer_onboarding_minutes
-        user_setting.reviewer_expected_aht_minutes = request.reviewer_expected_aht_minutes
-        user_setting.reviewer_max_aht_minutes = request.reviewer_max_aht_minutes
 
     await db.commit()
     return {"success": True, "message": "User settings updated in database."}

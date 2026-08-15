@@ -382,10 +382,15 @@ async def provision_single_user_environment(
         user_id=user_id_str,
         default_role="Reviewer",
         tracking_start_date=datetime.now(timezone.utc).date(),
-        trainer_expected_aht_minutes=15.00,
-        trainer_max_aht_minutes=25.00,
-        reviewer_expected_aht_minutes=10.00,
-        reviewer_max_aht_minutes=18.00,
+        reconciliation_interval_hours=12,
+        reconciliation_lookback_days=7,
+        admin_inactivity_threshold_minutes=10,
+        trainer_expected_aht_minutes=60.00,
+        trainer_max_aht_minutes=70.00,
+        trainer_onboarding_minutes=120.00,
+        reviewer_expected_aht_minutes=45.00,
+        reviewer_max_aht_minutes=70.00,
+        reviewer_onboarding_minutes=60.00,
     )
     db.add(new_settings)
 

@@ -17,25 +17,52 @@ logger = logging.getLogger(__name__)
 
 async def start_periodic_reconciliation_task():
     """
-    Background task running twice every day (every 12 hours = 43,200 seconds)
-    to perform a limited 7-day state reconciliation, safeguarding against missed webhook events.
+    Background task running periodically based on user's reconciliation_interval_hours
+    to perform state reconciliation, safeguarding against missed webhook events.
     """
     while True:
         try:
-            await asyncio.sleep(43200)
-            logger.info("Executing scheduled 12-hour 7-day background reconciliation...")
+            # Read dynamic interval and lookback from UserSettings
+            interval_hours = 12
+            lookback_days = 7
+            async with AsyncSessionLocal() as db:
+                user_res = await db.execute(select(app.models.User).limit(1))
+                user = user_res.scalar_one_or_none()
+                if user:
+                    settings_res = await db.execute(
+                        select(app.models.UserSettings).where(app.models.UserSettings.user_id == user.id)
+                    )
+                    user_settings = settings_res.scalar_one_or_none()
+                    if user_settings:
+                        interval_hours = user_settings.reconciliation_interval_hours
+                        lookback_days = user_settings.reconciliation_lookback_days
+
+            if interval_hours <= 0:
+                # Periodic background sync disabled by user (manual only), check again in 1 hour
+                await asyncio.sleep(3600)
+                continue
+
+            sleep_seconds = interval_hours * 3600
+            await asyncio.sleep(sleep_seconds)
+
+            logger.info(
+                f"Executing scheduled {interval_hours}-hour ({lookback_days}-day lookback) background reconciliation..."
+            )
             async with AsyncSessionLocal() as db:
                 user_res = await db.execute(select(app.models.User).limit(1))
                 user = user_res.scalar_one_or_none()
                 if user:
                     access_token = await get_valid_access_token(user.id, db)
                     if access_token:
-                        await sync_user_tracking_states(user.id, access_token, db, max_days=7)
-                        logger.info("Completed scheduled 12-hour 7-day background reconciliation.")
+                        await sync_user_tracking_states(user.id, access_token, db, max_days=lookback_days)
+                        logger.info(
+                            f"Completed scheduled {interval_hours}-hour ({lookback_days}-day lookback) background reconciliation."
+                        )
         except asyncio.CancelledError:
             break
         except Exception as e:
             logger.error(f"Error in background reconciliation task: {e}")
+            await asyncio.sleep(3600)
 
 
 @asynccontextmanager
@@ -157,6 +184,22 @@ async def lifespan(app: FastAPI):
             text(
                 "UPDATE task_logs SET task_group_id = 'tg_' || MD5(user_id || subrole || title) "
                 "WHERE task_group_id IS NULL AND title != 'Administrative Time';"
+            )
+        )
+        # Migrate user_settings columns
+        await conn.execute(
+            text(
+                "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS reconciliation_interval_hours INTEGER NOT NULL DEFAULT 12;"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS reconciliation_lookback_days INTEGER NOT NULL DEFAULT 7;"
+            )
+        )
+        await conn.execute(
+            text(
+                "ALTER TABLE user_settings ADD COLUMN IF NOT EXISTS admin_inactivity_threshold_minutes INTEGER NOT NULL DEFAULT 10;"
             )
         )
 

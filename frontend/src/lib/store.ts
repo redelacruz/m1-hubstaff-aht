@@ -1135,7 +1135,7 @@ export const calculateHubstaffBilledSecondsFromEvents = (
 export const calculateGlobalAHT = (roleFilter: Role | "All"): GlobalAhtBreakdown => {
   const filteredTasks = getFilteredTasks(roleFilter, "global");
   const nonAdminTasks = filteredTasks.filter((t) => t.title !== "Administrative Time");
-  const uniqueTaskGroups = new Set(nonAdminTasks.map((t) => t.taskGroupId || `${t.subrole}:::${t.title}`));
+  const uniqueTaskGroups = new Set(nonAdminTasks.map((t) => `${t.subrole}:::${t.title}`));
   const taskCount = uniqueTaskGroups.size;
 
   const billedCalc = calculateHubstaffBilledSecondsFromEvents(roleFilter);

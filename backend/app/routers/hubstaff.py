@@ -554,61 +554,42 @@ async def create_task_log(request: TaskLogCreateRequest, db: AsyncSession = Depe
     # Resolve or create TaskGroup if title is not Administrative Time
     group_id = None
     if request.title != "Administrative Time":
-        group = None
-        if request.task_group_id:
+        # First, check if a TaskGroup already exists for this exact deliverable (user_id, subrole, title)
+        group_stmt = select(TaskGroup).where(
+            TaskGroup.user_id == user.id,
+            TaskGroup.subrole == request.subrole,
+            TaskGroup.title == request.title,
+        )
+        group_res = await db.execute(group_stmt)
+        group = group_res.scalar_one_or_none()
+
+        if not group and request.task_group_id:
+            # If not matched by subrole+title, check by explicit task_group_id
             group_res = await db.execute(select(TaskGroup).where(TaskGroup.id == request.task_group_id))
             group = group_res.scalar_one_or_none()
-            if not group:
-                group_id = request.task_group_id
-                group = TaskGroup(
-                    id=group_id,
-                    user_id=user.id,
-                    role=request.role,
-                    subrole=request.subrole,
-                    title=request.title,
-                    url=request.url or "",
-                    notes=request.notes or "",
-                )
-                db.add(group)
-                await db.flush()
-            else:
-                group_id = group.id
-                if request.url:
-                    group.url = request.url
-                if request.notes:
-                    group.notes = request.notes
-                group.role = request.role
-                group.subrole = request.subrole
-                group.title = request.title
-        else:
-            group_stmt = select(TaskGroup).where(
-                TaskGroup.user_id == user.id,
-                TaskGroup.subrole == request.subrole,
-                TaskGroup.title == request.title,
-            )
-            group_res = await db.execute(group_stmt)
-            group = group_res.scalar_one_or_none()
 
-            if not group:
-                group_id = f"tg_{int(datetime.now().timestamp()*1000)}"
-                group = TaskGroup(
-                    id=group_id,
-                    user_id=user.id,
-                    role=request.role,
-                    subrole=request.subrole,
-                    title=request.title,
-                    url=request.url or "",
-                    notes=request.notes or "",
-                )
-                db.add(group)
-                await db.flush()
-            else:
-                group_id = group.id
-                if request.url:
-                    group.url = request.url
-                if request.notes:
-                    group.notes = request.notes
-                group.role = request.role
+        if not group:
+            group_id = request.task_group_id or f"tg_{int(datetime.now().timestamp()*1000)}"
+            group = TaskGroup(
+                id=group_id,
+                user_id=user.id,
+                role=request.role,
+                subrole=request.subrole,
+                title=request.title,
+                url=request.url or "",
+                notes=request.notes or "",
+            )
+            db.add(group)
+            await db.flush()
+        else:
+            group_id = group.id
+            if request.url:
+                group.url = request.url
+            if request.notes:
+                group.notes = request.notes
+            group.role = request.role
+            group.subrole = request.subrole
+            group.title = request.title
 
     task = TaskLog(
         id=task_id,

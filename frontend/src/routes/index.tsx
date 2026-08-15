@@ -338,7 +338,10 @@ export default function Home() {
     // Reset lastCompletedTaskEndTimeMs so the current task uses its own session
     setLastCompletedTaskEndTime(null);
 
-    const sessionGroupId = `tg_${nowTimestamp}_${Math.random().toString(36).substring(2, 7)}`;
+    const existingTask = tasks.find(
+      (t) => t.subrole === selectedSubrole() && t.title === taskTitle().trim() && t.title !== "Administrative Time"
+    );
+    const sessionGroupId = existingTask?.taskGroupId || `tg_${nowTimestamp}_${Math.random().toString(36).substring(2, 7)}`;
 
     updateActiveTasking({
       isTasking: true,
@@ -623,7 +626,9 @@ export default function Home() {
                       </Show>
                     </label>
                     <div
-                      onDblClick={() => setUnlockedFields((prev) => ({ ...prev, role: !prev.role }))}
+                      onDblClick={() => {
+                        if (activeTasking.isTasking) setUnlockedFields((prev) => ({ ...prev, role: !prev.role }));
+                      }}
                       class="relative"
                     >
                       <select
@@ -666,7 +671,9 @@ export default function Home() {
                     </Show>
                   </label>
                   <div
-                    onDblClick={() => setUnlockedFields((prev) => ({ ...prev, subrole: !prev.subrole }))}
+                    onDblClick={() => {
+                      if (activeTasking.isTasking) setUnlockedFields((prev) => ({ ...prev, subrole: !prev.subrole }));
+                    }}
                     class="relative"
                   >
                     <select
@@ -713,8 +720,10 @@ export default function Home() {
                   <input
                     type="text"
                     required
-                    readOnly={activeTasking.isTasking && !unlockedFields().title}
-                    onDblClick={() => setUnlockedFields((prev) => ({ ...prev, title: !prev.title }))}
+                    readOnly={activeTasking.isTasking && !unlockedFields().title ? true : undefined}
+                    onDblClick={() => {
+                      if (activeTasking.isTasking) setUnlockedFields((prev) => ({ ...prev, title: !prev.title }));
+                    }}
                     placeholder="e.g. gnLokxh8Gsk or 4081768869215654175"
                     value={taskTitle()}
                     onInput={(e) => {
@@ -744,8 +753,10 @@ export default function Home() {
                   </label>
                   <input
                     type="url"
-                    readOnly={activeTasking.isTasking && !unlockedFields().url}
-                    onDblClick={() => setUnlockedFields((prev) => ({ ...prev, url: !prev.url }))}
+                    readOnly={activeTasking.isTasking && !unlockedFields().url ? true : undefined}
+                    onDblClick={() => {
+                      if (activeTasking.isTasking) setUnlockedFields((prev) => ({ ...prev, url: !prev.url }));
+                    }}
                     placeholder="https://feather.openai.com/tasks/..."
                     value={taskUrl()}
                     onInput={(e) => {

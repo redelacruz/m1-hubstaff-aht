@@ -170,6 +170,22 @@ interface LocalState {
 }
 
 const loadInitialState = (): LocalState => {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        return {
+          settings: parsed.settings ? { ...DEFAULT_SETTINGS, ...parsed.settings } : DEFAULT_SETTINGS,
+          tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
+          hubstaffEvents: Array.isArray(parsed.hubstaffEvents) ? parsed.hubstaffEvents : [],
+          hubstaffTime: parsed.hubstaffTime || DEFAULT_HUBSTAFF_TIME,
+        };
+      }
+    } catch (e) {
+      console.warn("Error loading initial state from localStorage:", e);
+    }
+  }
   return {
     settings: DEFAULT_SETTINGS,
     tasks: getSeedTasks(),

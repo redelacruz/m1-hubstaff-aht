@@ -73,6 +73,63 @@ export default function Home() {
 
   const activeBilledInfo = createMemo(() => calculateHubstaffBilledSecondsFromEvents("All", nowMs()));
 
+  // Lock computations
+  const isRoleTimerLocked = createMemo(() => {
+    const info = activeBilledInfo();
+    return Boolean(info.activeTimer && info.activeProjectName);
+  });
+
+  const isRoleLocked = createMemo(() => {
+    if (isRoleTimerLocked()) return true;
+    return activeTasking.isTasking && !unlockedFields().role;
+  });
+
+  const isSubroleLocked = createMemo(() => {
+    return activeTasking.isTasking && !unlockedFields().subrole;
+  });
+
+  const isTitleLocked = createMemo(() => {
+    return activeTasking.isTasking && !unlockedFields().title;
+  });
+
+  const isUrlLocked = createMemo(() => {
+    return activeTasking.isTasking && !unlockedFields().url;
+  });
+
+  // Imperative DOM element refs to ensure bulletproof locking on initial hydration & refresh
+  let roleSelectRef: HTMLSelectElement | undefined;
+  let subroleSelectRef: HTMLSelectElement | undefined;
+  let titleInputRef: HTMLInputElement | undefined;
+  let urlInputRef: HTMLInputElement | undefined;
+
+  createEffect(() => {
+    const locked = isRoleLocked();
+    if (roleSelectRef) {
+      roleSelectRef.disabled = locked;
+    }
+  });
+
+  createEffect(() => {
+    const locked = isSubroleLocked();
+    if (subroleSelectRef) {
+      subroleSelectRef.disabled = locked;
+    }
+  });
+
+  createEffect(() => {
+    const locked = isTitleLocked();
+    if (titleInputRef) {
+      titleInputRef.readOnly = locked;
+    }
+  });
+
+  createEffect(() => {
+    const locked = isUrlLocked();
+    if (urlInputRef) {
+      urlInputRef.readOnly = locked;
+    }
+  });
+
   // Keep form inputs synced with activeTasking when active
   createEffect(() => {
     if (activeTasking.isTasking) {
@@ -614,33 +671,54 @@ export default function Home() {
                   <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-slate-400 mb-2 flex justify-between items-center">
                       <span>Role <span class="text-rose-400">*</span></span>
-                      <Show when={activeTasking.isTasking}>
+                      <Show when={isRoleTimerLocked() || activeTasking.isTasking}>
                         <button
                           type="button"
-                          onClick={() => setUnlockedFields((prev) => ({ ...prev, role: !prev.role }))}
+                          onClick={() => {
+                            if (isRoleTimerLocked()) {
+                              setNotificationMsg(`Role is locked to running Hubstaff timer project '${activeBilledInfo().activeProjectName}'`);
+                              setShowNotification(true);
+                              setTimeout(() => setShowNotification(false), 3000);
+                              return;
+                            }
+                            if (activeTasking.isTasking) {
+                              setUnlockedFields((prev) => ({ ...prev, role: !prev.role }));
+                            }
+                          }}
                           class="text-[9px] bg-slate-950 text-slate-300 hover:text-white px-2 py-0.5 rounded border border-slate-700 hover:border-sky-500 transition-colors cursor-pointer"
-                          title="Click or double-click to unlock"
+                          title={isRoleTimerLocked() ? "Role is locked to running Hubstaff timer project" : "Click or double-click to unlock"}
                         >
-                          {unlockedFields().role ? "🔓 Unlocked" : "🔒 Locked (Click to edit)"}
+                          {isRoleTimerLocked()
+                            ? "🔒 Locked (Timer project)"
+                            : (unlockedFields().role ? "🔓 Unlocked" : "🔒 Locked (Click to edit)")}
                         </button>
                       </Show>
                     </label>
                     <div
                       onDblClick={() => {
-                        if (activeTasking.isTasking) setUnlockedFields((prev) => ({ ...prev, role: !prev.role }));
+                        if (isRoleTimerLocked()) {
+                          setNotificationMsg(`Role is locked to running Hubstaff timer project '${activeBilledInfo().activeProjectName}'`);
+                          setShowNotification(true);
+                          setTimeout(() => setShowNotification(false), 3000);
+                          return;
+                        }
+                        if (activeTasking.isTasking) {
+                          setUnlockedFields((prev) => ({ ...prev, role: !prev.role }));
+                        }
                       }}
                       class="relative"
                     >
                       <select
+                        ref={roleSelectRef}
                         value={selectedRole()}
-                        disabled={activeBilledInfo().activeTimer || (activeTasking.isTasking && !unlockedFields().role)}
+                        disabled={isRoleLocked()}
                         onChange={(e) => {
                           const r = e.currentTarget.value as Role;
                           setSelectedRole(r);
                           if (activeTasking.isTasking) updateActiveTasking({ role: r });
                         }}
                         class={`w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer ${
-                          activeBilledInfo().activeTimer || (activeTasking.isTasking && !unlockedFields().role) ? "opacity-75 cursor-not-allowed" : ""
+                          isRoleLocked() ? "opacity-75 cursor-not-allowed" : ""
                         }`}
                       >
                         <For each={getUserAvailableRoles()}>
@@ -677,15 +755,16 @@ export default function Home() {
                     class="relative"
                   >
                     <select
+                      ref={subroleSelectRef}
                       value={selectedSubrole()}
-                      disabled={activeTasking.isTasking && !unlockedFields().subrole}
+                      disabled={isSubroleLocked()}
                       onChange={(e) => {
                         const sr = e.currentTarget.value as Subrole;
                         setSelectedSubrole(sr);
                         if (activeTasking.isTasking) updateActiveTasking({ subrole: sr });
                       }}
                       class={`w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-sky-500 appearance-none cursor-pointer ${
-                        activeTasking.isTasking && !unlockedFields().subrole ? "opacity-75 cursor-not-allowed" : ""
+                        isSubroleLocked() ? "opacity-75 cursor-not-allowed" : ""
                       }`}
                     >
                       <For each={SUBROLES_BY_ROLE[selectedRole()]}>
@@ -718,9 +797,10 @@ export default function Home() {
                     </Show>
                   </label>
                   <input
+                    ref={titleInputRef}
                     type="text"
                     required
-                    readOnly={activeTasking.isTasking && !unlockedFields().title ? true : undefined}
+                    readOnly={isTitleLocked() ? true : undefined}
                     onDblClick={() => {
                       if (activeTasking.isTasking) setUnlockedFields((prev) => ({ ...prev, title: !prev.title }));
                     }}
@@ -732,7 +812,7 @@ export default function Home() {
                       if (activeTasking.isTasking) updateActiveTasking({ title: val });
                     }}
                     class={`w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 ${
-                      activeTasking.isTasking && !unlockedFields().title ? 'cursor-not-allowed opacity-75' : ''
+                      isTitleLocked() ? 'cursor-not-allowed opacity-75' : ''
                     }`}
                   />
                 </div>
@@ -752,8 +832,9 @@ export default function Home() {
                     </Show>
                   </label>
                   <input
+                    ref={urlInputRef}
                     type="url"
-                    readOnly={activeTasking.isTasking && !unlockedFields().url ? true : undefined}
+                    readOnly={isUrlLocked() ? true : undefined}
                     onDblClick={() => {
                       if (activeTasking.isTasking) setUnlockedFields((prev) => ({ ...prev, url: !prev.url }));
                     }}
@@ -765,7 +846,7 @@ export default function Home() {
                       if (activeTasking.isTasking) updateActiveTasking({ url: val });
                     }}
                     class={`w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-slate-100 text-sm placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-sky-500 ${
-                      activeTasking.isTasking && !unlockedFields().url ? 'cursor-not-allowed opacity-75' : ''
+                      isUrlLocked() ? 'cursor-not-allowed opacity-75' : ''
                     }`}
                   />
                 </div>

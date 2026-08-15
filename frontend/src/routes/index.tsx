@@ -21,6 +21,7 @@ import {
   calculateHubstaffBilledSecondsFromEvents,
   parseRoleFromProjectName,
   fetchLocalHubstaffEvents,
+  hubstaffEvents,
   activeTasking,
   updateActiveTasking,
   clearActiveTasking,
@@ -33,13 +34,24 @@ import { ConfirmationModal } from "../components/ConfirmationModal";
 import { TaskGroupModal } from "../components/TaskGroupModal";
 
 export default function Home() {
-  // Poll local Hubstaff events every 3 seconds for real-time timer updates
+  // Smooth 1-second reactive clock ticker
+  const [nowMs, setNowMs] = createSignal<number>(Date.now());
+
+  // Poll local Hubstaff events every 3 seconds for real-time timer updates & tick clock every 1 second
   onMount(() => {
+    const ticker = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
     fetchLocalHubstaffEvents();
-    const interval = setInterval(() => {
+    const poller = setInterval(() => {
       fetchLocalHubstaffEvents();
     }, 3000);
-    onCleanup(() => clearInterval(interval));
+
+    onCleanup(() => {
+      clearInterval(ticker);
+      clearInterval(poller);
+    });
   });
 
   // Form signals
@@ -59,7 +71,7 @@ export default function Home() {
     url: false,
   });
 
-  const activeBilledInfo = createMemo(() => calculateHubstaffBilledSecondsFromEvents("All"));
+  const activeBilledInfo = createMemo(() => calculateHubstaffBilledSecondsFromEvents("All", nowMs()));
 
   // Keep form inputs synced with activeTasking when active
   createEffect(() => {
@@ -128,7 +140,16 @@ export default function Home() {
     // Timer just STOPPED while in Active Tasking mode -> Commit segment to DB
     if (!isTimerRunning && previousTimerState) {
       if (activeTasking.isTasking && activeTasking.timerStartMs) {
-        const segSecs = Math.max(1, Math.round((Date.now() - activeTasking.timerStartMs) / 1000));
+        // Extract latest Hubstaff stop event timestamp to calibrate exact duration
+        const eventsList = hubstaffEvents || [];
+        const recentEvents = [...eventsList].sort(
+          (a, b) => new Date(b.eventTime).getTime() - new Date(a.eventTime).getTime()
+        );
+        const latestStopEvt = recentEvents.find((e) => e.eventName.toLowerCase().includes("stop"));
+        const stopEventMs = latestStopEvt ? new Date(latestStopEvt.eventTime).getTime() : Date.now();
+        const effectiveStopMs = stopEventMs >= activeTasking.timerStartMs ? stopEventMs : Date.now();
+
+        const segSecs = Math.max(1, Math.round((effectiveStopMs - activeTasking.timerStartMs) / 1000));
         
         // Check if there was a delayed timer start (> threshold)
         let segNotes = activeTasking.notes || "";
@@ -151,7 +172,7 @@ export default function Home() {
         const updatedSegments = [...(activeTasking.sessionSegmentIds || []), newLog.id];
         updateActiveTasking({
           timerStartMs: undefined,
-          lastTimerStopMs: Date.now(),
+          lastTimerStopMs: effectiveStopMs,
           sessionSegmentIds: updatedSegments,
         });
 
@@ -164,12 +185,13 @@ export default function Home() {
     previousTimerState = isTimerRunning;
   });
 
-  // Calculate 6 Active Task Timer Visual States
+  // Calculate 6 Active Task Timer Visual States (Smoothly ticks every 1 second)
   const timerState = createMemo(() => {
     const isTasking = activeTasking.isTasking;
     const isTimerRunning = activeBilledInfo().activeTimer;
     const info = activeBilledInfo();
     const timerStartMs = info.activeStartMs;
+    const currentClockMs = nowMs();
 
     const currentSubrole = isTasking ? activeTasking.subrole : selectedSubrole();
     const currentTitle = isTasking ? activeTasking.title : taskTitle();
@@ -196,8 +218,8 @@ export default function Home() {
     // State 2: Actively Tasking (Hubstaff Timer Running)
     if (isTasking && isTimerRunning) {
       const currentSegmentSecs = activeTasking.timerStartMs
-        ? Math.max(0, Math.round((Date.now() - activeTasking.timerStartMs) / 1000))
-        : (timerStartMs ? Math.max(0, Math.round((Date.now() - timerStartMs) / 1000)) : 0);
+        ? Math.max(0, Math.round((currentClockMs - activeTasking.timerStartMs) / 1000))
+        : (timerStartMs ? Math.max(0, Math.round((currentClockMs - timerStartMs) / 1000)) : 0);
       const totalGroupSecs = priorGroupSeconds + currentSegmentSecs;
       return {
         digitsColor: "text-emerald-400",
@@ -213,7 +235,7 @@ export default function Home() {
     // State 3 & 4: Hubstaff Timer Running but NOT in Active Tasking Mode
     if (!isTasking && isTimerRunning) {
       const anchorMs = getUnassignedTimerAnchorMs(timerStartMs, lastCompletedTaskEndTimeMs());
-      const elapsedSecs = Math.max(0, Math.round((Date.now() - anchorMs) / 1000));
+      const elapsedSecs = Math.max(0, Math.round((currentClockMs - anchorMs) / 1000));
       const adminThresholdSecs = (settings.adminInactivityThresholdMinutes ?? 10) * 60;
 
       if (elapsedSecs < adminThresholdSecs) {

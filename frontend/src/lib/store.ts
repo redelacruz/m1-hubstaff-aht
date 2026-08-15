@@ -1022,7 +1022,8 @@ export interface HubstaffBilledCalculation {
 }
 
 export const calculateHubstaffBilledSecondsFromEvents = (
-  roleFilter: Role | "All"
+  roleFilter: Role | "All" = "All",
+  referenceNowMs?: number
 ): HubstaffBilledCalculation => {
   const events = hubstaffEvents || [];
   events.length; // Ensure SolidJS store reactivity tracking
@@ -1089,9 +1090,9 @@ export const calculateHubstaffBilledSecondsFromEvents = (
   let activeTimer = false;
   if (activeStartMs !== null) {
     activeTimer = true;
-    const nowMs = Date.now();
-    if (nowMs > activeStartMs) {
-      totalSeconds += Math.max(0, Math.round((nowMs - activeStartMs) / 1000));
+    const currentNowMs = referenceNowMs || Date.now();
+    if (currentNowMs > activeStartMs) {
+      totalSeconds += Math.max(0, Math.round((currentNowMs - activeStartMs) / 1000));
     }
   }
 
